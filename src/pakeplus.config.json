@@ -1,0 +1,23 @@
+{
+  "appName": "考场条码座位打印系统",
+  "version": "1.0.0",
+  "description": "考场座号条码、桌贴、考场门贴、W型座位布局图生成与打印工具。完全离线运行，支持自定义纸张尺寸、字号缩放10%-300%、按班级导出PDF/CSV/ZIP。",
+  "entry": "index.html",
+  "offline": true,
+  "icon": "icon.png",
+  "window": {
+    "width": 1280,
+    "height": 860,
+    "resizable": true,
+    "title": "考场条码座位打印系统"
+  },
+  "android": {
+    "landscape": true,
+    "storagePermission": true,
+    "description": "读取/保存导出的PDF、CSV、ZIP文件"
+  },
+  "webview": {
+    "zoomControl": true,
+    "disableExternalLinks": true
+  }
+}
