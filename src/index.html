@@ -1,0 +1,2735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>考场随机分配与条码打印系统</title>
+<style>
+  *{box-sizing:border-box}
+  :root{
+    --bg:#f2f4f7; --card:#ffffff; --line:#e2e6ec; --text:#1f2430; --muted:#7a8292;
+    --primary:#1f6feb; --primary-d:#1558c4; --ok:#0f9d58; --warn:#d93025;
+  }
+  html,body{margin:0;padding:0;height:100%}
+  body{
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+    background:var(--bg); color:var(--text); font-size:14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* ---------- 顶栏 ---------- */
+  .bar{
+    height:56px; display:flex; align-items:center; gap:16px;
+    padding:0 18px; background:#fff; border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:20;
+  }
+  .brand{font-size:16px;font-weight:700;letter-spacing:.5px}
+  .brand span{color:var(--primary)}
+  .bar .sp{flex:1}
+  button{
+    font-family:inherit; font-size:14px; padding:8px 16px; border-radius:8px;
+    border:1px solid var(--line); background:#fff; color:var(--text);
+    cursor:pointer; transition:.15s; white-space:nowrap;
+  }
+  button:hover{border-color:#c9d1dc; background:#f7f9fc}
+  button.primary{background:var(--primary); border-color:var(--primary); color:#fff; font-weight:600}
+  button.primary:hover{background:var(--primary-d); border-color:var(--primary-d)}
+  button.ghost{color:var(--muted)}
+  button.wide{width:100%; margin-top:10px}
+  button:disabled{opacity:.55; cursor:not-allowed}
+
+  /* ---------- 布局 ---------- */
+  main{display:flex; align-items:flex-start; height:calc(100vh - 56px)}
+  aside{
+    width:372px; flex:0 0 372px; height:100%; overflow-y:auto;
+    padding:14px; background:var(--bg); border-right:1px solid var(--line);
+  }
+  aside::-webkit-scrollbar{width:8px}
+  aside::-webkit-scrollbar-thumb{background:#cfd6e0;border-radius:4px}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:14px; margin-bottom:12px;
+  }
+  .card h3{
+    margin:0 0 12px; font-size:13px; font-weight:700; color:var(--primary);
+    display:flex; align-items:center; gap:6px;
+  }
+  .card h3::before{
+    content:""; width:3px; height:13px; background:var(--primary); border-radius:2px;
+  }
+  .field{margin-bottom:10px}
+  .field:last-child{margin-bottom:0}
+  .field > label{display:block; font-size:12px; color:var(--muted); margin-bottom:5px}
+  input[type=text],input[type=number],select,textarea{
+    width:100%; font-family:inherit; font-size:13px; color:var(--text);
+    padding:7px 9px; border:1px solid var(--line); border-radius:8px;
+    background:#fff; outline:none;
+  }
+  input[type=text]:focus,input[type=number]:focus,select:focus,textarea:focus{
+    border-color:var(--primary); box-shadow:0 0 0 3px rgba(31,111,235,.1);
+  }
+  textarea{
+    height:104px; resize:vertical; line-height:1.6;
+    font-family:Consolas,"Courier New",monospace; font-size:12.5px;
+  }
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px}
+  .chk{display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text); cursor:pointer; margin:4px 0}
+  .chk input{width:15px;height:15px;accent-color:var(--primary);cursor:pointer}
+  .hint{font-size:12px; color:var(--muted); line-height:1.7; margin-top:8px}
+  .hint b{color:var(--text)}
+  .hint.err{color:var(--warn)}
+  .filebox{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    border:1.5px dashed #c3ccd9; border-radius:10px; padding:14px 10px;
+    color:var(--muted); cursor:pointer; font-size:13px; background:#fafbfd;
+  }
+  .filebox:hover{border-color:var(--primary); color:var(--primary); background:#f4f8ff}
+  .filebox input{display:none}
+  .split{height:1px; background:var(--line); margin:12px 0}
+
+  /* ---------- 预览区 ---------- */
+  #previewWrap{
+    flex:1; height:100%; overflow:auto; padding:0 0 40px;
+    background:#e9ecf1;
+  }
+  .preview-bar{
+    position:sticky; top:0; z-index:10;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:10px 18px; background:#fff; border-bottom:1px solid var(--line);
+    font-size:12.5px; color:var(--muted);
+  }
+  .tag{background:#f0f4fb; color:var(--primary); padding:3px 9px; border-radius:20px; font-weight:600}
+  #pages{padding:22px; display:flex; flex-direction:column; align-items:center; gap:18px}
+  .empty{
+    margin:80px auto; max-width:420px; text-align:center; color:var(--muted);
+    line-height:1.9; font-size:13px;
+  }
+  .empty b{display:block; font-size:15px; color:var(--text); margin-bottom:6px}
+
+  /* ---------- 页面 & 座位条 ---------- */
+  .page{
+    width:var(--pw); height:var(--ph); background:#fff;
+    box-shadow:0 4px 18px rgba(30,40,60,.14); border-radius:2px;
+    padding:var(--pm); display:grid; gap:var(--pg);
+    grid-template-columns:repeat(var(--cols),1fr);
+    grid-template-rows:repeat(var(--rows),1fr);
+    overflow:hidden; flex:0 0 auto;
+    font-family:var(--cjk, "SimHei","黑体","Microsoft YaHei",sans-serif);
+  }
+  .label{
+    border:1px dashed #c8ced8; border-radius:2.2mm;
+    padding:var(--lbpadv, 1.4mm) var(--lbpadh, 2mm);
+    display:flex; flex-direction:column; justify-content:center; gap:var(--lbgap, 2.4mm);
+    overflow:hidden; background:#fff;
+    font-family:inherit;
+    font-size:var(--f3, var(--f-all)); line-height:1.15;
+  }
+  .label.noline{border-color:transparent}
+  .lb-top{
+    font-size:var(--f1, var(--f-all)); color:#454545; text-align:center;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.2;
+  }
+  .lb-main{
+    font-size:var(--f2, var(--f-all)); color:#000; text-align:center;
+    white-space:nowrap; overflow:hidden; line-height:1.25;
+  }
+  .lb-main b{font-weight:800}
+  .lb-bottom{
+    font-size:var(--f3, var(--f-all)); color:#000; text-align:center;
+    white-space:nowrap; overflow:hidden; line-height:1.25; letter-spacing:.2px;
+  }
+  .lb-bottom b{font-weight:800}
+  .lb-cls2{color:#777}
+  .lb-head{
+    display:flex; justify-content:space-between; align-items:flex-start;
+    gap:1.6mm; min-width:0;
+  }
+  .lb-org{display:flex; flex-direction:column; min-width:0; overflow:hidden}
+  .lb-org .l1{
+    font-size:var(--f-num); color:#333; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; line-height:1.15;
+  }
+  .lb-org .l2{
+    font-size:calc(var(--f-num) * .88); color:#777; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; line-height:1.15;
+  }
+  .lb-room{font-size:var(--f-uni); font-weight:700; color:#111; white-space:nowrap; line-height:1.1}
+  .lb-mid{display:flex; align-items:baseline; gap:2.5mm; margin-top:.5mm}
+  .lb-name{font-size:var(--f-name); font-weight:800; letter-spacing:.5px; color:#000; white-space:nowrap}
+  .lb-cls{font-size:var(--f-sm); color:#555; white-space:nowrap}
+  .lb-code{margin-top:0; display:flex; flex-direction:column; align-items:center}
+  .lb-code svg{width:var(--bcw,100%); height:var(--f-bc); display:block}
+  .lb-code .num{
+    font-family:inherit; font-size:var(--f-num);
+    letter-spacing:1px; color:#000; margin-top:.6mm; white-space:nowrap;
+  }
+  .pagebadge{font-size:12px;color:var(--muted);align-self:flex-end;margin:-8px 0 -12px auto;padding-right:4px}
+
+  /* ---------- 座位布局图 ---------- */
+  .tabs{display:flex; gap:3px; background:#eef1f6; padding:3px; border-radius:9px}
+  .tabs button{
+    padding:5px 13px; border:none; background:transparent; border-radius:6px;
+    font-size:12.5px; color:var(--muted); cursor:pointer;
+  }
+  .tabs button.active{background:#fff; color:var(--primary); font-weight:700; box-shadow:0 1px 3px rgba(0,0,0,.1)}
+  .seatpage{
+    width:var(--pw); height:var(--ph); background:#fff; padding:var(--pm);
+    box-shadow:0 4px 18px rgba(30,40,60,.14); border-radius:2px;
+    display:flex; flex-direction:column; flex:0 0 auto;
+    font-family:var(--cjk, "SimHei","黑体","Microsoft YaHei",sans-serif);
+  }
+  .sp-head{
+    display:flex; justify-content:space-between; align-items:baseline; gap:6mm;
+    border-bottom:.9mm solid #222; padding-bottom:1.6mm;
+  }
+  .sp-title{font-size:var(--f-title); font-weight:800; letter-spacing:.5px}
+  .sp-sub{font-size:var(--f-tiny); color:#555; white-space:nowrap}
+  .sp-stage{
+    text-align:center; font-size:var(--f-tiny); border:1px dashed #999;
+    border-radius:1.2mm; padding:1.2mm; margin:2mm 0; letter-spacing:3px; color:#333;
+  }
+  .seat-grid{flex:1; display:grid; gap:1.5mm; min-height:0}
+  .seat-cell{
+    border:1px solid #aeb6c2; border-radius:1.4mm; display:flex;
+    flex-direction:column; align-items:center; justify-content:center;
+    overflow:hidden; padding:.8mm;
+  }
+  .seat-cell.seat-empty{border-style:dashed; border-color:#cfd5de; color:#c9cfd9}
+  .seat-no{font-size:var(--f-big); font-weight:800; line-height:1.05}
+  .seat-name{font-size:var(--f-nm); font-weight:700; margin-top:.4mm; white-space:nowrap; max-width:100%}
+  .seat-no2{font-family:inherit; font-size:var(--f-tiny); color:#666; margin-top:.3mm; white-space:nowrap}
+
+  /* ---------- 导出下拉菜单 ---------- */
+  .dd{position:relative; display:inline-block}
+  .dd > summary{
+    list-style:none; font-size:14px; padding:8px 16px; border-radius:8px;
+    border:1px solid var(--line); background:#fff; cursor:pointer; user-select:none;
+    display:inline-flex; align-items:center; gap:6px; line-height:1.2;
+  }
+  .dd > summary::-webkit-details-marker{display:none}
+  .dd > summary:hover{border-color:#c9d1dc; background:#f7f9fc}
+  .dd[open] > summary{border-color:var(--primary); color:var(--primary)}
+  .dd-menu{
+    position:absolute; right:0; top:calc(100% + 6px); z-index:40; width:236px;
+    background:#fff; border:1px solid var(--line); border-radius:10px; padding:6px;
+    box-shadow:0 12px 30px rgba(30,40,60,.18); display:flex; flex-direction:column; gap:2px;
+  }
+  .dd-menu button{
+    border:none; text-align:left; padding:8px 10px; border-radius:7px;
+    font-size:13px; background:transparent; width:100%;
+  }
+  .dd-menu button:hover{background:#f2f6fd; color:var(--primary)}
+  .dd-menu .tt{font-size:11.5px; color:var(--muted); padding:5px 10px 2px}
+  .busy{font-size:12.5px; color:var(--primary); display:none; align-items:center; gap:6px; font-weight:600}
+
+  /* ---------- 桌贴 ---------- */
+  .deskcell{
+    border:1px dashed #c8ced8; border-radius:2.4mm; overflow:hidden;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:1.4mm; padding:1.8mm 2mm; background:#fff; text-align:center;
+  }
+  .deskcell.noline{border-color:transparent}
+  .desk-top{
+    font-size:var(--f-dt); color:#666; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; max-width:100%; line-height:1.2;
+  }
+  .desk-cap{font-size:var(--f-dc); color:#999; letter-spacing:.35em; text-indent:.35em; line-height:1}
+  .desk-no{font-size:var(--f-dn); font-weight:800; line-height:1; color:#000}
+  .desk-name{font-size:var(--f-ds); font-weight:800; color:#000; white-space:nowrap; line-height:1.1}
+  .desk-info{
+    font-size:var(--f-di); color:#333; white-space:nowrap; line-height:1.2;
+    max-width:100%; overflow:hidden; text-overflow:ellipsis;
+  }
+  .desk-code{width:74%; display:flex; flex-direction:column; align-items:center}
+  .desk-code svg{width:100%; height:var(--f-db); display:block}
+  .desk-code .num{
+    font-family:inherit; font-size:var(--f-di);
+    letter-spacing:1px; margin-top:.5mm; white-space:nowrap;
+  }
+
+  /* ---------- 考场门贴 ---------- */
+  .door{display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden}
+  .door-head{text-align:center; border-bottom:1mm solid #222; padding-bottom:2mm}
+  .door-org{font-size:var(--f-dop); font-weight:800; letter-spacing:.06em; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .door-exam{font-size:var(--f-dex); color:#444; margin-top:1.8mm; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .door-room{
+    text-align:center; font-size:var(--f-drm); font-weight:800; letter-spacing:.05em;
+    line-height:1.1; margin:7mm 0 2.5mm; white-space:nowrap;
+  }
+  .door-sub{text-align:center; font-size:var(--f-dex); color:#555; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .door-grid{
+    flex:1; display:grid; gap:1.5mm; margin-top:2mm; min-height:0; align-content:start;
+  }
+  .door-cell{
+    border:1px solid #aeb6c2; border-radius:1.4mm; display:flex;
+    flex-direction:column; align-items:center; justify-content:center; overflow:hidden; padding:.8mm;
+  }
+  .door-seat{font-size:var(--f-dds); font-weight:800; line-height:1.05}
+  .door-name{font-size:var(--f-ddn); margin-top:.4mm; white-space:nowrap; max-width:100%}
+  .door-note{
+    text-align:center; font-size:var(--f-dex); color:#666;
+    border-top:.5mm dashed #bbb; margin-top:2mm; padding-top:2mm; letter-spacing:.05em;
+  }
+
+  /* ---------- 打印 ---------- */
+  /* 纸张尺寸由 JS 写入 #pageRule，随“纸张大小”变化 */
+  @media print{
+    body{background:#fff}
+    .bar,aside,.preview-bar,.empty,.pagebadge{display:none !important}
+    main{display:block;height:auto}
+    #previewWrap{background:#fff; padding:0; overflow:visible; height:auto}
+    #pages{padding:0; gap:0; display:block}
+    .page{
+      box-shadow:none; border-radius:0; margin:0;
+      break-after:page; page-break-after:always;
+    }
+    .page:last-child{break-after:auto; page-break-after:auto}
+    .seatpage{
+      box-shadow:none; border-radius:0; margin:0;
+      break-after:page; page-break-after:always;
+    }
+    .seatpage:last-child{break-after:auto; page-break-after:auto}
+    .label{border-color:#b9c0cb}
+    .label.noline{border-color:transparent}
+  }
+  @media (max-width:1180px){ aside{width:320px;flex:0 0 320px} }
+</style>
+<style id="pageRule">@page{size:210mm 297mm; margin:0}</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="brand">考场<span>随机分配</span>与条码打印</div>
+  <div class="sp"></div>
+  <span id="busy" class="busy">生成中…</span>
+  <button id="btnDemo" class="ghost">载入示例数据</button>
+  <details class="dd" id="ddExport">
+    <summary>导出名单 ▾</summary>
+    <div class="dd-menu">
+      <div class="tt">按考场</div>
+      <button id="btnExportRoom">分考场名单 .csv</button>
+      <div class="tt">按班级</div>
+      <button id="btnExportClass">按班级导出 .zip（每班一个 csv）</button>
+      <button id="btnExportClassAll">按班级汇总名单 .csv</button>
+    </div>
+  </details>
+  <details class="dd" id="ddPdf">
+    <summary>导出 PDF ▾</summary>
+    <div class="dd-menu">
+      <div class="tt">选择清晰度（当前样式整份导出）</div>
+      <button data-dpi="150">导出 PDF · 150 dpi（体积小）</button>
+      <button data-dpi="200">导出 PDF · 200 dpi（推荐）</button>
+      <button data-dpi="300">导出 PDF · 300 dpi（最清晰）</button>
+    </div>
+  </details>
+  <button id="btnPrint" class="primary">打印</button>
+</div>
+
+<main>
+  <aside>
+    <!-- 1 名单 -->
+    <div class="card">
+      <h3>1 导入名单</h3>
+      <label class="filebox" for="fileInput">
+        <span>📄 选择 Excel(.xlsx) / CSV 文件</span>
+        <input type="file" id="fileInput" accept=".xlsx,.csv,.txt">
+      </label>
+      <div class="field" style="margin-top:10px">
+        <label>或从 Excel 直接复制粘贴（每行一名学生）</label>
+        <textarea id="rawText" placeholder="考号	姓名	班级&#10;20260101	张三	高二(3)班&#10;20260102	李四	高二(3)班"></textarea>
+      </div>
+      <div class="field">
+        <div class="row2">
+          <div>
+            <label>分隔方式</label>
+            <select id="delim">
+              <option value="auto">自动识别</option>
+              <option value="tab">制表符</option>
+              <option value=",">逗号</option>
+              <option value=";">分号</option>
+              <option value="space">空格</option>
+            </select>
+          </div>
+          <div>
+            <label>首行</label>
+            <select id="hasHeader">
+              <option value="auto">自动判断</option>
+              <option value="1">是表头</option>
+              <option value="0">不是表头</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button id="btnParse" class="primary wide">解 析 名 单</button>
+      <div id="parseInfo" class="hint">尚未导入数据。</div>
+    </div>
+
+    <!-- 2 列映射 -->
+    <div class="card" id="mapCard" style="display:none">
+      <h3>2 字段对应</h3>
+      <div class="row3">
+        <div>
+          <label>考号列</label>
+          <select id="colNo"></select>
+        </div>
+        <div>
+          <label>姓名列</label>
+          <select id="colName"></select>
+        </div>
+        <div>
+          <label>班级列</label>
+          <select id="colClass"></select>
+        </div>
+      </div>
+      <div class="hint">若识别不准，可在此手动指定。班级列可选“无”。</div>
+    </div>
+
+    <!-- 3 随机生成考号 -->
+    <div class="card">
+      <h3>3 随机生成考号</h3>
+      <div class="field">
+        <label>考号来源</label>
+        <select id="noMode">
+          <option value="keep">沿用名单里的考号</option>
+          <option value="random">重新随机生成考号</option>
+        </select>
+      </div>
+      <div id="noGenWrap" style="display:none">
+        <div class="row2">
+          <div class="field">
+            <label>考号前缀</label>
+            <input type="text" id="noPrefix" value="2026">
+          </div>
+          <div class="field">
+            <label>序号位数</label>
+            <input type="number" id="noDigits" value="4" min="2" max="8">
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>起始序号</label>
+            <input type="number" id="noStart" value="1" min="0">
+          </div>
+          <div class="field">
+            <label>随机种子</label>
+            <input type="text" id="noSeed" value="2026">
+          </div>
+        </div>
+        <div class="hint">同一个种子每次生成的考号完全相同，便于复核和重印。</div>
+      </div>
+      <div class="hint" id="noStat">—</div>
+    </div>
+
+    <!-- 4 分考场与座号 -->
+    <div class="card">
+      <h3>4 分考场与座号</h3>
+      <div class="row2">
+        <div class="field">
+          <label>起始考场号</label>
+          <input type="number" id="startRoom" value="1" min="1" max="999">
+        </div>
+        <div class="field">
+          <label>每考场人数上限</label>
+          <input type="number" id="perRoom" value="45" min="1" max="200">
+        </div>
+      </div>
+      <label class="chk"><input type="checkbox" id="evenRooms"> 考场人数尽量平均（如 90 人分 2 场，每场 45 人）</label>
+      <div class="field" style="margin-top:8px">
+        <label>座位分配规则</label>
+        <select id="assignMode">
+          <option value="byNo">按考号顺序（考号小的坐前面）</option>
+          <option value="classSpread">同班分散（同班尽量不同场、不邻座）</option>
+          <option value="random">完全随机打乱（按种子，可复核）</option>
+          <option value="order">按名单原顺序</option>
+          <option value="classOrder">同班连号（按班级归并后顺序编号）</option>
+        </select>
+      </div>
+      <div class="field" id="seedWrap" style="display:none">
+        <label>座位随机种子（相同种子结果一致）</label>
+        <input type="text" id="seed" value="2026">
+      </div>
+      <div class="hint" id="roomStat">—</div>
+    </div>
+
+      <!-- 5 条码与版式 -->
+      <div class="card">
+        <h3>5 条码与版式</h3>
+        <div class="row2">
+          <div class="field">
+            <label>纸张大小</label>
+            <select id="paper">
+              <option value="a4" selected>A4　210×297</option>
+              <option value="a3">A3　297×420</option>
+              <option value="b4">B4　257×364</option>
+              <option value="a5">A5　148×210</option>
+              <option value="letter">Letter　216×279</option>
+              <option value="custom">自定义尺寸（自己填宽×高）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>字体</label>
+            <select id="fontFamily">
+              <option value="simhei" selected>黑体</option>
+              <option value="simsun">宋体</option>
+              <option value="kaiti">楷体</option>
+              <option value="yahei">微软雅黑</option>
+            </select>
+          </div>
+        </div>
+        <div class="row2" id="customPaperWrap" style="display:none">
+          <div class="field">
+            <label>纸张宽（mm）</label>
+            <input type="number" id="paperW" value="210" min="40" max="1200" step="1">
+          </div>
+          <div class="field">
+            <label>纸张高（mm）</label>
+            <input type="number" id="paperH" value="297" min="40" max="1200" step="1">
+          </div>
+        </div>
+        <div class="field">
+          <label>字号缩放（%，10–300，四种样式统一）</label>
+          <input type="number" id="fontScale" value="100" min="10" max="300" step="5">
+          <div class="hint" style="margin-top:4px">超出格子可容纳范围时，按该格子能放下的最大字号显示；条码在放大时会自动压到最小 8mm 高。</div>
+          <div class="hint" id="scaleEff" style="margin-top:2px;color:#c2410c"></div>
+        </div>
+        <div class="field">
+          <label>学校名称（可留空）</label>
+          <input type="text" id="orgName" value="夏邑县高级中学">
+        </div>
+        <div class="field">
+          <label>考试名称（可留空）</label>
+          <input type="text" id="examName" value="期中考试">
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>页边距(mm)</label>
+            <input type="number" id="margin" value="5" min="0" max="30" step="1">
+          </div>
+          <div class="field">
+            <label>每位打印份数</label>
+            <input type="number" id="copies" value="1" min="1" max="4">
+          </div>
+        </div>
+        <div class="field">
+          <label>只打印指定考场（留空为全部，如 1,3,5-9）</label>
+          <input type="text" id="roomFilter" value="" placeholder="全部">
+        </div>
+        <label class="chk"><input type="checkbox" id="showClass"> 显示班级</label>
+
+        <!-- 条码设置（座号条 / 桌贴共用） -->
+        <div id="boxBarcode">
+          <div class="split"></div>
+          <div class="row2">
+            <div class="field">
+              <label>条码内容</label>
+              <select id="bcSource">
+                <option value="no">考号</option>
+                <option value="roomSeat">考场+座号</option>
+                <option value="custom">自定义模板</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>条码类型</label>
+              <select id="bcType">
+                <option value="code128">Code128（推荐）</option>
+                <option value="code39">Code39（兼容老设备）</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" id="bcTplWrap" style="display:none">
+            <label>模板，可用 {考场} {座号} {考号} {姓名} {班级}</label>
+            <input type="text" id="bcTpl" value="{考场}-{座号}">
+          </div>
+        </div>
+
+        <!-- 座号条专用 -->
+        <div id="boxLabel">
+          <div class="split"></div>
+          <div class="row2">
+            <div class="field">
+              <label>每页列数</label>
+              <input type="number" id="cols" value="4" min="1" max="30">
+            </div>
+            <div class="field">
+              <label>每页行数</label>
+              <input type="number" id="rows" value="11" min="1" max="40">
+            </div>
+          </div>
+          <label class="chk"><input type="checkbox" id="autoGrid"> 按纸张自动排满（按标准 50×25mm 贴纸算行列）</label>
+          <div class="hint" id="gridHint"></div>
+          <div class="hint">标准高考粘贴条 50×25mm：4 列 × 11 行 = 44 张/页，条码本体 40×10mm（CODE128）。45 人的考场会占两页。</div>
+          <div class="hint">纸张换成 A3 / 自定义大尺寸时，可把行列调大或勾“自动排满”，一页放更多张。</div>
+          <label class="chk"><input type="checkbox" id="newPagePerRoom" checked> 每个考场从新的一页开始（一场一场贴更整齐）</label>
+          <label class="chk"><input type="checkbox" id="showCutline" checked> 显示裁切虚线</label>
+        </div>
+
+        <!-- 桌贴专用 -->
+        <div id="boxDesk">
+          <div class="split"></div>
+          <div class="row2">
+            <div class="field">
+              <label>每页列数</label>
+              <input type="number" id="deskCols" value="2" min="1" max="4">
+            </div>
+            <div class="field">
+              <label>每页行数</label>
+              <input type="number" id="deskRows" value="2" min="1" max="6">
+            </div>
+          </div>
+          <label class="chk"><input type="checkbox" id="deskBarcode" checked> 桌贴带条码</label>
+          <label class="chk"><input type="checkbox" id="deskCutline" checked> 显示裁切虚线</label>
+          <div class="hint">桌贴＝贴在学生桌角的大号座号卡，字号随每页张数自动放大。</div>
+        </div>
+
+        <!-- 考场门贴专用 -->
+        <div id="boxDoor">
+          <div class="split"></div>
+          <label class="chk"><input type="checkbox" id="doorSeatmap" checked> 门贴下方附座位表（学生对号入座）</label>
+          <label class="chk"><input type="checkbox" id="doorCutline"> 显示裁切虚线</label>
+          <div class="hint">每个考场一页（纸张随上方“纸张大小”设置，自定义尺寸同样生效）：顶部校名考试、中间超大考场号，可直接打印贴在考场门口。</div>
+        </div>
+
+        <div class="split"></div>
+        <label class="chk"><input type="checkbox" id="autoRefresh" checked> 修改设置后自动更新预览</label>
+      </div>
+
+      <!-- 6 座位布局图 -->
+      <div class="card" id="cardSeat">
+        <h3>6 座位布局图</h3>
+        <div class="field">
+          <label>每排座位数（排数按人数自动算，5 列 × 9 排 = 45 座）</label>
+          <input type="number" id="seatCols" value="5" min="2" max="12">
+        </div>
+        <div>
+          <label>座位编号方式</label>
+          <select id="seatOrder">
+            <option value="w" selected>W 型（按列往返）</option>
+            <option value="s">S 型（按排往返）</option>
+            <option value="straight">直排（不往返）</option>
+          </select>
+          <div class="hint">W 型：第 1 列自上而下，第 2 列自下而上，依次交替，序号路径呈 W 折线；S 型即传统蛇形。</div>
+        </div>
+        <label class="chk"><input type="checkbox" id="seatShowNo" checked> 座位格里显示考号</label>
+        <label class="chk"><input type="checkbox" id="seatShowCls"> 座位格里显示班级</label>
+        <div class="hint">在上方切换“座位布局图”，每个考场一页，标注讲台方向，可直接打印张贴在考场门口。</div>
+      </div>
+    </aside>
+
+    <section id="previewWrap">
+      <div class="preview-bar">
+        <div class="tabs" id="viewTabs">
+          <button id="viewLabels" data-view="label" class="active">座号条</button>
+          <button id="viewDesk" data-view="desk">桌贴</button>
+          <button id="viewDoor" data-view="door">考场门贴</button>
+          <button id="viewSeat" data-view="seat">座位布局图</button>
+        </div>
+        <span class="tag" id="tagPeople">0 人</span>
+        <span class="tag" id="tagRooms">0 个考场</span>
+        <span id="tagPages">0 页</span>
+        <span style="flex:1"></span>
+        <span>打印前请在系统打印设置中把“页边距”设为“无”、“缩放”设为 100%，并关闭页眉页脚。</span>
+      </div>
+      <div id="pages">
+        <div class="empty"><b>等待导入名单</b>在左侧导入或粘贴名单，点“解析名单”，右侧即刻生成座号条预览。</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+/* =========================================================
+   考场座号条码打印系统 —— 单文件离线版
+   ========================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 1. Code128 编码表 ---------------- */
+  var C128 = [
+    '212222','222122','222221','121223','121322','131222','122213','122312','132212','221213',
+    '221312','231212','112232','122132','122231','113222','123122','123221','223211','221132',
+    '221231','213212','223112','312131','311222','321122','321221','312212','322112','322211',
+    '212123','212321','232121','111323','131123','131321','112313','132113','132311','211313',
+    '231113','231311','112133','112331','132131','113123','113321','133121','313121','211331',
+    '231131','213113','213311','213131','311123','311321','331121','312113','312311','332111',
+    '314111','221411','431111','111224','111422','121124','121421','141122','141221','112214',
+    '112412','122114','122411','142112','142211','241211','221114','413111','241112','134111',
+    '111242','121142','121241','114212','124112','124211','411212','421112','421211','212141',
+    '214121','412121','111143','111341','131141','114113','114311','411113','411311','113141',
+    '114131','311141','411131','211412','211214','211232','2331112'
+  ];
+
+  /* 自检：除停止符外每个符号应为 11 模块、6 个元素 */
+  (function selfCheck() {
+    var bad = [];
+    for (var i = 0; i < 106; i++) {
+      var p = C128[i];
+      if (!p || p.length !== 6) { bad.push(i); continue; }
+      var sum = 0;
+      for (var k = 0; k < 6; k++) sum += Number(p[k]);
+      if (sum !== 11) bad.push(i);
+    }
+    if (C128[106].length !== 7) bad.push(106);
+    if (bad.length) console.log('[Code128] 编码表异常索引: ' + bad.join(','));
+  })();
+
+  var C = { startB: 104, startC: 105, stop: 106 };
+
+  /** 把内容转为 Code128 的 runs 数组（{w, bar}） */
+  function code128Runs(text) {
+    text = String(text == null ? '' : text);
+    var codes = [];
+    var numeric = /^[0-9]+$/.test(text) && text.length % 2 === 0 && text.length > 0;
+    if (numeric) {
+      codes.push(C.startC);
+      for (var i = 0; i < text.length; i += 2) codes.push(Number(text.substr(i, 2)));
+    } else {
+      // 非 ASCII 字符直接剔除，保证条码可扫
+      var ascii = '';
+      for (var j = 0; j < text.length; j++) {
+        var code = text.charCodeAt(j);
+        if (code >= 32 && code <= 126) ascii += text.charAt(j);
+      }
+      codes.push(C.startB);
+      for (var m = 0; m < ascii.length; m++) codes.push(ascii.charCodeAt(m) - 32);
+    }
+    var sum = codes[0];
+    for (var n = 1; n < codes.length; n++) sum += codes[n] * n;
+    codes.push(sum % 103);
+    codes.push(C.stop);
+
+    var runs = [];
+    for (var c = 0; c < codes.length; c++) {
+      var pat = C128[codes[c]];
+      for (var e = 0; e < pat.length; e++) {
+        runs.push({ w: Number(pat.charAt(e)), bar: e % 2 === 0 });
+      }
+    }
+    return runs;
+  }
+
+  /** 生成条码 SVG（向量，打印清晰） */
+  function barcodeSVG(text) {
+    var runs = code128Runs(text);
+    var total = 0, i;
+    for (i = 0; i < runs.length; i++) total += runs[i].w;
+    var quiet = 10;
+    var full = total + quiet * 2;
+    var x = quiet;
+    var rects = [];
+    for (i = 0; i < runs.length; i++) {
+      if (runs[i].bar) {
+        rects.push('<rect x="' + x + '" y="0" width="' + runs[i].w + '" height="100"/>');
+      }
+      x += runs[i].w;
+    }
+    return '<svg viewBox="0 0 ' + full + ' 100" preserveAspectRatio="none" ' +
+      'xmlns="http://www.w3.org/2000/svg"><g fill="#000">' + rects.join('') + '</g></svg>';
+  }
+
+  /* ---------------- 2. DOM 快捷 ---------------- */
+  function $(id) { return document.getElementById(id); }
+  function pad2(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /* ---------------- 3. 全局状态 ---------------- */
+  var S = {
+    rows: [],        // 原始行（含表头已剥离）
+    headerRow: null, // 表头文本数组
+    students: [],    // {no,name,cls}
+    records: [],     // {room,seat,no,name,cls}
+    parsed: false,
+    view: 'label'    // label=座号条  seat=座位布局图
+  };
+
+  /* ---------------- 4. 文本解析 ---------------- */
+  function detectDelim(lines) {
+    var sample = lines.slice(0, Math.min(8, lines.length));
+    var tab = 0, comma = 0, semi = 0;
+    for (var i = 0; i < sample.length; i++) {
+      if (sample[i].indexOf('\t') >= 0) tab++;
+      if (sample[i].indexOf(',') >= 0) comma++;
+      if (sample[i].indexOf(';') >= 0) semi++;
+    }
+    if (tab >= comma && tab > 0) return 'tab';
+    if (comma > 0 && comma >= semi) return ',';
+    if (semi > 0) return ';';
+    return 'space';
+  }
+
+  function splitQuoted(line) {
+    // 简易 CSV：支持双引号包裹、"" 转义
+    var out = [], cur = '', inQ = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line.charAt(i);
+      if (inQ) {
+        if (ch === '"') {
+          if (line.charAt(i + 1) === '"') { cur += '"'; i++; }
+          else inQ = false;
+        } else cur += ch;
+      } else {
+        if (ch === '"') inQ = true;
+        else if (ch === ',') { out.push(cur.trim()); cur = ''; }
+        else cur += ch;
+      }
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
+  function splitLine(line, d) {
+    if (d === 'tab') return line.split('\t').map(function (s) { return s.trim(); });
+    if (d === ',') return splitQuoted(line);
+    if (d === ';') return line.split(';').map(function (s) { return s.trim(); });
+    return line.trim().split(/[\s\u3000]+/).filter(function (s) { return s !== ''; });
+  }
+
+  var HEAD_KEYS = /考号|学号|准考证|考生号|编号|姓名|名字|学生|班级|班别|性别|序号/i;
+  function isHeaderRow(cells) {
+    var hit = 0;
+    for (var i = 0; i < cells.length; i++) if (HEAD_KEYS.test(cells[i])) hit++;
+    return hit >= 2 || /考号|学号|准考证|姓名/i.test(cells.join('|'));
+  }
+
+  /** 列推测 */
+  function guessColumns(header, rows) {
+    var res = { no: -1, name: -1, cls: -1, noMissing: false };
+    var colCount = 0, i, j;
+    for (i = 0; i < rows.length; i++) colCount = Math.max(colCount, rows[i].length);
+
+    if (header) {
+      for (i = 0; i < header.length; i++) {
+        var h = header[i] || '';
+        if (/考号|学号|准考证|考生号|编号|序号/i.test(h) && res.no < 0) res.no = i;
+        if (/姓名|名字|学生姓名/i.test(h) && res.name < 0) res.name = i;
+        if (/班级|班别|所在班/i.test(h) && res.cls < 0) res.cls = i;
+      }
+    }
+
+    var sample = rows.slice(0, Math.min(40, rows.length));
+    var stat = [];
+    for (j = 0; j < colCount; j++) {
+      var num = 0, cn = 0, n = 0, hasBan = 0;
+      for (i = 0; i < sample.length; i++) {
+        var v = (sample[i][j] || '').trim();
+        if (!v) continue;
+        n++;
+        if (/^[0-9A-Za-z\-_]{5,}$/.test(v) && /[0-9]/.test(v)) num++;
+        if (/^[\u4e00-\u9fa5·•\s]{2,6}$/.test(v)) cn++;
+        if (/班/.test(v)) hasBan++;
+      }
+      stat.push({ idx: j, num: n ? num / n : 0, cn: n ? cn / n : 0, ban: n ? hasBan / n : 0 });
+    }
+
+    // 考号列：表头没匹配上，就看数据里有没有"编号型"列
+    if (res.no < 0) {
+      var bestNum = null;
+      for (i = 0; i < stat.length; i++) {
+        if (stat[i].idx === res.name || stat[i].idx === res.cls) continue;
+        if (stat[i].num > 0.85 && (!bestNum || stat[i].num > bestNum.num)) bestNum = stat[i];
+      }
+      if (bestNum) res.no = bestNum.idx;
+      else res.noMissing = true;
+    }
+
+    // 姓名列
+    if (res.name < 0) {
+      var bestCn = null;
+      for (i = 0; i < stat.length; i++) {
+        if (stat[i].idx === res.no || stat[i].idx === res.cls) continue;
+        if (stat[i].cn > 0.6 && (!bestCn || stat[i].cn > bestCn.cn)) bestCn = stat[i];
+      }
+      if (bestCn) res.name = bestCn.idx;
+      else res.name = res.no === 0 && colCount > 1 ? 1 : 0;
+    }
+
+    // 班级列
+    if (res.cls < 0) {
+      for (i = 0; i < stat.length; i++) {
+        if (stat[i].idx === res.no || stat[i].idx === res.name) continue;
+        if (stat[i].ban > 0.5) { res.cls = stat[i].idx; break; }
+      }
+    }
+
+    if (res.name === res.no && colCount > 1) res.name = res.no === 0 ? 1 : 0;
+    if (res.name === res.cls && colCount > 1) res.name = res.name === 0 ? 1 : 0;
+    return res;
+  }
+
+  /* ---------------- 5. 名单解析主流程 ---------------- */
+  function parseRawText(text) {
+    text = String(text || '').replace(/\r\n?/g, '\n');
+    var lines = text.split('\n');
+    var kept = [];
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].replace(/[\s\u3000]/g, '') !== '') kept.push(lines[i]);
+    }
+    if (!kept.length) return null;
+
+    var delimOpt = $('delim').value;
+    var d = delimOpt === 'auto' ? detectDelim(kept.slice(0, 8)) : delimOpt;
+    var rows = kept.map(function (l) { return splitLine(l, d); });
+
+    var headerOpt = $('hasHeader').value;
+    var header = null;
+    var hasHead = headerOpt === '1' || (headerOpt === 'auto' && isHeaderRow(rows[0]));
+    if (hasHead) { header = rows[0]; rows = rows.slice(1); }
+
+    if (!rows.length) return null;
+
+    var guess = guessColumns(header, rows);
+    S.rows = rows;
+    S.headerRow = header;
+    S.guess = guess;
+    return { rows: rows, header: header, guess: guess, delim: d };
+  }
+
+  function buildStudents() {
+    var noIdx = $('colNo').value === '' ? -1 : Number($('colNo').value);
+    var nameIdx = Number($('colName').value || 0);
+    var clsIdx = $('colClass').value === '' ? -1 : Number($('colClass').value);
+    var list = [];
+    for (var i = 0; i < S.rows.length; i++) {
+      var r = S.rows[i];
+      var no = (r[noIdx] || '').trim();
+      var name = (r[nameIdx] || '').trim();
+      if (!no && !name) continue;
+      var cls = clsIdx >= 0 ? (r[clsIdx] || '').trim() : '';
+      list.push({ no: no, name: name, cls: cls });
+    }
+    S.students = list;
+    return list;
+  }
+
+  /* ---------------- 6. 分考场 ---------------- */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function shuffle(arr, seedStr) {
+    var seed = 0, i;
+    for (i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+    var rnd = mulberry32(seed);
+    var a = arr.slice();
+    for (i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(rnd() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  /** 纸张规格表（mm） */
+  var PAPERS = {
+    a4: { w: 210, h: 297, name: 'A4' },
+    a3: { w: 297, h: 420, name: 'A3' },
+    b4: { w: 257, h: 364, name: 'B4' },
+    a5: { w: 148, h: 210, name: 'A5' },
+    letter: { w: 216, h: 279, name: 'Letter' }
+  };
+
+  /** 字体栈：CSS 与 canvas 共用（单引号，避免破坏内联 style 属性） */
+  var FONTS = {
+    simhei: "'SimHei','黑体','Microsoft YaHei',sans-serif",
+    simsun: "'SimSun','宋体','Songti SC',serif",
+    kaiti: "'KaiTi','楷体','Kaiti SC',serif",
+    yahei: "'Microsoft YaHei','PingFang SC',sans-serif"
+  };
+
+  var PAGE_W = 210, PAGE_H = 297, A4W = 210, A4H = 297, PAGE_FONT = FONTS.simhei;
+
+  function applyPage(cfg) {
+    PAGE_W = cfg.pageW || 210;
+    PAGE_H = cfg.pageH || 297;
+    A4W = PAGE_W;
+    A4H = PAGE_H;
+    PAGE_FONT = cfg.fontStack || FONTS.simhei;
+  }
+
+  /** 页面级变量 + 打印纸张尺寸同步 */
+  function syncPaper(cfg) {
+    var root = document.documentElement.style;
+    root.setProperty('--pw', (cfg.pageW || 210) + 'mm');
+    root.setProperty('--ph', (cfg.pageH || 297) + 'mm');
+    root.setProperty('--cjk', cfg.fontStack || FONTS.simhei);
+    var pr = document.getElementById('pageRule');
+    if (pr) pr.textContent = '@page{size:' + (cfg.pageW || 210) + 'mm ' + (cfg.pageH || 297) + 'mm; margin:0}';
+  }
+
+  function readCfg() {
+    var paperKey = $('paper').value;
+    var paper = PAPERS[paperKey] || PAPERS.a4;
+    var mg = Math.max(0, Math.min(30, Number($('margin').value) || 0));
+    var pw = paper.w, ph = paper.h, pname = paper.name;
+    if (paperKey === 'custom') {
+      pw = Math.max(40, Math.min(1200, Number($('paperW').value) || 210));
+      ph = Math.max(40, Math.min(1200, Number($('paperH').value) || 297));
+      pname = '自定义 ' + Math.round(pw) + '×' + Math.round(ph);
+    }
+    var cols = Math.max(1, Math.min(30, Number($('cols').value) || 4));
+    var rows = Math.max(1, Math.min(40, Number($('rows').value) || 11));
+    // 按纸张自动排满：以标准 50×25mm 贴纸为基准算行列
+    if ($('autoGrid').checked) {
+      cols = Math.max(1, Math.min(30, Math.floor((pw - mg * 2) / 50)));
+      rows = Math.max(1, Math.min(40, Math.floor((ph - mg * 2) / 25)));
+      while (cols * rows > 400 && rows > 1) rows--;
+    }
+    return {
+      paper: paperKey,
+      pageW: pw,
+      pageH: ph,
+      paperName: pname,
+      fontKey: $('fontFamily').value,
+      fontStack: FONTS[$('fontFamily').value] || FONTS.simhei,
+      fScale: Math.max(0.1, Math.min(3, (Number($('fontScale').value) || 100) / 100)),
+      view: S.view,
+      start: Math.max(1, Number($('startRoom').value) || 1),
+      perRoom: Math.max(1, Number($('perRoom').value) || 45),
+      even: $('evenRooms').checked,
+      mode: $('assignMode').value,
+      seed: $('seed').value || '2026',
+      noMode: $('noMode').value,
+      noPrefix: $('noPrefix').value.trim(),
+      noDigits: Math.max(2, Math.min(8, Number($('noDigits').value) || 4)),
+      noStart: Math.max(0, Number($('noStart').value) || 0),
+      noSeed: $('noSeed').value || '2026',
+      autoGrid: $('autoGrid').checked,
+      cols: cols,
+      rows: rows,
+      deskCols: Math.max(1, Math.min(4, Number($('deskCols').value) || 2)),
+      deskRows: Math.max(1, Math.min(6, Number($('deskRows').value) || 2)),
+      deskBarcode: $('deskBarcode').checked,
+      deskCutline: $('deskCutline').checked,
+      doorSeatmap: $('doorSeatmap').checked,
+      doorCutline: $('doorCutline').checked,
+      margin: mg,
+      copies: Math.max(1, Math.min(4, Number($('copies').value) || 1)),
+      bcSource: $('bcSource').value,
+      bcTpl: $('bcTpl').value,
+      org: $('orgName').value.trim(),
+      exam: $('examName').value.trim(),
+      showClass: $('showClass').checked,
+      showCutline: $('showCutline').checked,
+      pagePerRoom: $('newPagePerRoom').checked,
+      roomFilter: $('roomFilter').value.trim(),
+      seatCols: Math.max(2, Math.min(12, Number($('seatCols').value) || 5)),
+      seatSerp: $('seatOrder').value === 's',
+      seatOrder: $('seatOrder').value,
+      seatShowNo: $('seatShowNo').checked,
+      seatShowCls: $('seatShowCls').checked
+    };
+  }
+
+  /** 随机生成考号：把学生随机排序后依次编号，考号与人的对应关系随机 */
+  function applyNumbers(list, cfg) {
+    var out = list.map(function (s) {
+      return { no: s.no, name: s.name, cls: s.cls };
+    });
+    if (cfg.noMode !== 'random' || !out.length) return out;
+    var order = shuffle(out, cfg.noSeed);
+    var seq = cfg.noStart;
+    for (var i = 0; i < order.length; i++) {
+      var num = String(seq++);
+      while (num.length < cfg.noDigits) num = '0' + num;
+      order[i].no = (cfg.noPrefix || '') + num;
+    }
+    return out;
+  }
+
+  /** 每个考场的人数 */
+  function planRooms(n, perRoom, even) {
+    var rooms = Math.max(1, Math.ceil(n / perRoom));
+    var sizes = [];
+    if (even) {
+      var rest = n % rooms;
+      for (var i = 0; i < rooms; i++) sizes.push((n - rest) / rooms + (i < rest ? 1 : 0));
+    } else {
+      for (var j = 0; j < rooms - 1; j++) sizes.push(perRoom);
+      sizes.push(n - perRoom * (rooms - 1));
+    }
+    return sizes;
+  }
+
+  /** 同班分散：按班轮转取人，顺序切分考场后每场各班人数均衡、邻座不同班 */
+  function spreadByClass(list) {
+    var groups = {}, order = [], i;
+    for (i = 0; i < list.length; i++) {
+      var k = list[i].cls || '（未填班级）';
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(list[i]);
+    }
+    order.sort(function (a, b) { return groups[b].length - groups[a].length; });
+    var cursor = order.map(function () { return 0; });
+    var out = [];
+    while (out.length < list.length) {
+      for (i = 0; i < order.length; i++) {
+        var g = groups[order[i]];
+        if (cursor[i] < g.length) out.push(g[cursor[i]++]);
+      }
+    }
+    return out;
+  }
+
+  function assignSeats(list, cfg) {
+    var pool = list.slice();
+    if (cfg.mode === 'classOrder') {
+      pool.sort(function (a, b) {
+        var x = a.cls || 'zzz', y = b.cls || 'zzz';
+        return x === y ? 0 : (x < y ? -1 : 1);
+      });
+    } else if (cfg.mode === 'byNo') {
+      pool.sort(function (a, b) {
+        return String(a.no).localeCompare(String(b.no), undefined, { numeric: true });
+      });
+    } else if (cfg.mode === 'random') {
+      pool = shuffle(pool, cfg.seed);
+    } else if (cfg.mode === 'classSpread') {
+      pool = spreadByClass(pool);
+    }
+
+    var sizes = planRooms(pool.length, cfg.perRoom, cfg.even);
+    var recs = [], k = 0;
+    for (var r = 0; r < sizes.length; r++) {
+      for (var s = 0; s < sizes[r]; s++) {
+        var st = pool[k++];
+        recs.push({
+          room: cfg.start + r,
+          seat: s + 1,
+          no: st.no,
+          name: st.name,
+          cls: st.cls,
+          idx: k
+        });
+      }
+    }
+    return recs;
+  }
+
+  /* ---------------- 7. 条码内容 ---------------- */
+  function bcContent(rec, cfg) {
+    var v;
+    if (cfg.bcSource === 'roomSeat') {
+      v = pad2(rec.room) + '-' + pad2(rec.seat);
+    } else if (cfg.bcSource === 'custom') {
+      v = (cfg.bcTpl || '')
+        .replace(/\{考场\}/g, pad2(rec.room))
+        .replace(/\{座号\}/g, pad2(rec.seat))
+        .replace(/\{考号\}/g, rec.no)
+        .replace(/\{姓名\}/g, rec.name)
+        .replace(/\{班级\}/g, rec.cls);
+    } else {
+      v = rec.no || (pad2(rec.room) + '-' + pad2(rec.seat));
+    }
+    return v.replace(/[^\x20-\x7E]/g, '');
+  }
+
+  /* ---------------- 8. 渲染 ---------------- */
+  function parseRoomFilter(str) {
+    if (!str) return null;
+    var set = {};
+    str.split(/[,，\s]+/).forEach(function (seg) {
+      if (!seg) return;
+      var m = seg.match(/^(\d+)\s*[-~]\s*(\d+)$/);
+      if (m) {
+        var a = Number(m[1]), b = Number(m[2]);
+        if (a > b) { var t = a; a = b; b = t; }
+        for (var i = a; i <= b; i++) set[i] = 1;
+      } else if (/^\d+$/.test(seg)) {
+        set[Number(seg)] = 1;
+      }
+    });
+    return set;
+  }
+
+  function labelHTML(rec, cfg, text) {
+    var l = '<div class="label' + (cfg.showCutline ? '' : ' noline') + '">';
+    l += '<div class="lb-top">' + esc([cfg.org, cfg.exam].filter(Boolean).join(' · ')) + '</div>';
+    l += '<div class="lb-main">' + roomLineOf(rec) + '</div>';
+    l += '<div class="lb-code">' + barcodeSVG(text) + '</div>';
+    l += '<div class="lb-bottom">' + bottomLineOf(rec, cfg, text) + '</div>';
+    l += '</div>';
+    return l;
+  }
+
+  /** 条码上方一行：考场 + 座号 */
+  function roomLineOf(rec) {
+    return '考场 ' + pad2(rec.room) + '　座号 ' + rec.seat;
+  }
+
+  /** 条码下方一行：姓名 + 考号（+班级） */
+  function bottomLineOf(rec, cfg, text) {
+    var no = rec.no || text;
+    var s = esc(rec.name) + '　' + esc(no);
+    if (cfg.showClass && rec.cls) s += '<span class="lb-cls2">　' + esc(rec.cls) + '</span>';
+    return s;
+  }
+
+  function bottomLinePlain(rec, cfg, text) {
+    var no = rec.no || text || '';
+    var s = rec.name + '　' + no;
+    if (cfg.showClass && rec.cls) s += '　' + rec.cls;
+    return s;
+  }
+
+  /** 兼容旧调用：考场 + 座号 + 姓名（+班级） */
+  function mainLineOf(rec, cfg) {
+    var s = roomLineOf(rec) + '　<b>' + esc(rec.name) + '</b>';
+    if (cfg.showClass && rec.cls) s += '<span class="lb-cls2">　' + esc(rec.cls) + '</span>';
+    return s;
+  }
+
+  /** 第二行纯文本（用于估算字号 / PDF 绘制） */
+  function mainLinePlain(rec, cfg) {
+    var s = '考场 ' + pad2(rec.room) + '　座号 ' + rec.seat + '　' + rec.name;
+    if (cfg.showClass && rec.cls) s += '　' + rec.cls;
+    return s;
+  }
+
+  /** 估算文字占宽（汉字按 1 个字号宽，半角按 0.55） */
+  function textUnits(s) {
+    var u = 0, i;
+    for (i = 0; i < s.length; i++) u += s.charCodeAt(i) > 127 ? 1 : 0.55;
+    return u;
+  }
+
+  /** 统一生成考场座号记录（所有视图共用） */
+  function computeRecords(cfg) {
+    var list = applyNumbers(S.students, cfg);
+    var recs = assignSeats(list, cfg);
+    var lastRoom = cfg.start;
+    for (var i = 0; i < recs.length; i++) if (recs[i].room > lastRoom) lastRoom = recs[i].room;
+    var usedRooms = recs.length ? lastRoom - cfg.start + 1 : 0;
+    var filter = parseRoomFilter(cfg.roomFilter);
+    var shown = filter ? recs.filter(function (r) { return filter[r.room]; }) : recs.slice();
+    shown.sort(function (a, b) { return a.room === b.room ? a.seat - b.seat : a.room - b.room; });
+    return { list: list, recs: recs, shown: shown, usedRooms: usedRooms };
+  }
+
+  /**
+   * 座号 → 网格位置的映射（0 基）。
+   * w        W 型：按列往返，第1列自上而下、第2列自下而上……序号路径呈 W 折线
+   * s        S 型：按排往返，即传统蛇形
+   * straight 直排：每排都从左到右
+   */
+  function seatPos(rr, cc, cols, rows, order) {
+    if (order === 'w') return cc * rows + (cc % 2 === 1 ? rows - 1 - rr : rr);
+    if (order === 's') return rr * cols + (rr % 2 === 1 ? cols - 1 - cc : cc);
+    return rr * cols + cc;
+  }
+
+  /** 把记录按考场分组 */
+  function groupByRoom(recs) {
+    var groups = {}, order = [];
+    for (var i = 0; i < recs.length; i++) {
+      var rm = recs[i].room;
+      if (!groups[rm]) { groups[rm] = []; order.push(rm); }
+      groups[rm].push(recs[i]);
+    }
+    order.sort(function (a, b) { return a - b; });
+    return { groups: groups, order: order };
+  }
+
+  /** 座号条的分页、尺寸与字号 */
+  function labelLayout(cfg, shown) {
+    var items = [], i, c;
+    for (i = 0; i < shown.length; i++) for (c = 0; c < cfg.copies; c++) items.push(shown[i]);
+
+    var perPage = cfg.cols * cfg.rows;
+    var pageList = [];
+    if (cfg.pagePerRoom) {
+      var grp = [];
+      for (var gi = 0; gi < items.length; gi++) {
+        if (grp.length && items[gi].room !== grp[0].room) {
+          for (var gs = 0; gs < grp.length; gs += perPage) pageList.push(grp.slice(gs, gs + perPage));
+          grp = [];
+        }
+        grp.push(items[gi]);
+      }
+      for (var gs2 = 0; gs2 < grp.length; gs2 += perPage) pageList.push(grp.slice(gs2, gs2 + perPage));
+    } else {
+      for (var q3 = 0; q3 < items.length; q3 += perPage) pageList.push(items.slice(q3, q3 + perPage));
+    }
+
+    var gap = 0.6;
+    var innerW = cfg.pageW - cfg.margin * 2 - (cfg.cols - 1) * gap;
+    var innerH = cfg.pageH - cfg.margin * 2 - (cfg.rows - 1) * gap;
+    var lw = innerW / cfg.cols;
+    var lh = innerH / cfg.rows;
+
+    var headLine = [cfg.org, cfg.exam].filter(Boolean).join(' · ');
+    var maxU1 = textUnits(headLine), maxU2 = 1, maxU3 = 1;
+    for (var ui = 0; ui < items.length; ui++) {
+      var t = bcContent(items[ui], cfg);
+      var u2 = textUnits(roomLineOf(items[ui]));
+      var u3 = textUnits(bottomLinePlain(items[ui], cfg, t));
+      if (u2 > maxU2) maxU2 = u2;
+      if (u3 > maxU3) maxU3 = u3;
+    }
+
+    // 留白随格子缩放
+    var padH = Math.min(2, lw * 0.05);
+    var padV = Math.min(0.8, lh * 0.03);
+    var gv = Math.min(0.9, lh * 0.035);
+
+    // 标准高考粘贴条：条码本体 40×10mm（4:1，含 10 倍静区），格小则等比缩进格内
+    var bcW = Math.min(40, lw - padH * 2);
+    var bcH = bcW / 4;
+
+    // 三行文字按高考粘贴条的层级取字号：科目最小、考场座号居中、姓名考号最大
+    var kTop = 0.75, kMain = 0.95, kBot = 1.05;
+    var textW = lw - padH * 2 - 1;
+    var unitH = kTop * 1.25 + kMain * 1.3 + kBot * 1.4;
+    var availH = lh - padV * 2 - gv * 3;
+    var wCap = Math.min(
+      headLine ? textW / (maxU1 || 1) / kTop : 99,
+      textW / (maxU2 || 1) / kMain,
+      textW / (maxU3 || 1) / kBot,
+      6
+    );
+    var f0fit = Math.min(wCap, (availH - bcH) / unitH);
+    if (f0fit < 1.4) f0fit = 1.4;
+
+    // 用户字号缩放：放大时先压条码高度（不低于 8mm）腾空间，仍不够再收敛
+    var ks = cfg.fScale || 1;
+    var f0 = f0fit * ks;
+    if (f0 > wCap) f0 = wCap;
+    var bcHuse = bcH;
+    if (f0 * unitH > availH - 8) {
+      f0 = (availH - 8) / unitH;
+      bcHuse = 8;
+    } else {
+      bcHuse = Math.min(bcH, Math.max(8, availH - f0 * unitH));
+    }
+    if (f0 < 1.4) f0 = 1.4;
+    var f1 = f0 * kTop, f2 = f0 * kMain, f3 = f0 * kBot;
+
+    return {
+      items: items, pageList: pageList, perPage: perPage,
+      pageCount: pageList.length || 1, gap: gap, lw: lw, lh: lh,
+      fAll: f3, f1: f1, f2: f2, f3: f3, fNum: f3, fBc: bcHuse, headLine: headLine,
+      f0: f0, f0fit: f0fit, eff: f0 / f0fit,
+      padH: padH, padV: padV, gv: gv, bcW: bcW
+    };
+  }
+
+  function renderLabels() {
+    var cfg = readCfg();
+    var pagesEl = $('pages');
+
+    if (!S.students.length) {
+      pagesEl.innerHTML = '<div class="empty"><b>等待导入名单</b>在左侧导入或粘贴名单，点“解析名单”，右侧即刻生成座号条预览。</div>';
+      updateStats(0, 0, 0);
+      return;
+    }
+
+    var R = computeRecords(cfg);
+    var L = labelLayout(cfg, R.shown);
+
+    if (cfg.autoGrid) {
+      $('cols').value = cfg.cols;
+      $('rows').value = cfg.rows;
+    }
+
+    var vars = [
+      '--pw:' + cfg.pageW + 'mm', '--ph:' + cfg.pageH + 'mm',
+      '--cjk:' + cfg.fontStack,
+      '--pm:' + cfg.margin + 'mm',
+      '--pg:' + L.gap + 'mm',
+      '--cols:' + cfg.cols, '--rows:' + cfg.rows,
+      '--f-all:' + L.fAll.toFixed(2) + 'mm',
+      '--f1:' + L.f1.toFixed(2) + 'mm',
+      '--f2:' + L.f2.toFixed(2) + 'mm',
+      '--f3:' + L.f3.toFixed(2) + 'mm',
+      '--f-num:' + L.fNum.toFixed(2) + 'mm',
+      '--f-bc:' + L.fBc.toFixed(2) + 'mm',
+      '--bcw:' + L.bcW.toFixed(2) + 'mm',
+      '--lbpadh:' + L.padH.toFixed(2) + 'mm',
+      '--lbpadv:' + L.padV.toFixed(2) + 'mm',
+      '--lbgap:' + L.gv.toFixed(2) + 'mm'
+    ].join(';');
+
+    var html = '';
+    for (var p = 0; p < L.pageCount; p++) {
+      var pageItems = L.pageList[p] || [];
+      html += '<div class="page" style="' + vars + '">';
+      for (var k = 0; k < L.perPage; k++) {
+        var it = pageItems[k];
+        if (it) {
+          html += labelHTML(it, cfg, bcContent(it, cfg));
+        } else {
+          html += '<div class="label noline" style="border-color:transparent"></div>';
+        }
+      }
+      html += '</div>';
+    }
+    pagesEl.innerHTML = html;
+
+    var ks = cfg.fScale || 1;
+    var effTxt = '';
+    if (L.eff < ks - 0.02) {
+      effTxt = '实际生效约 ' + Math.round(L.eff * 100) + '%：格子已放满，想更大请换更大的纸张或减少每页行列。';
+    }
+    var se = $('scaleEff');
+    if (se) se.textContent = effTxt;
+
+    var gh = $('gridHint');
+    if (gh) {
+      gh.textContent = cfg.autoGrid
+        ? ('当前纸张 ' + Math.round(cfg.pageW) + '×' + Math.round(cfg.pageH) + 'mm 自动排：' + cfg.cols + ' 列 × ' + cfg.rows + ' 行 = ' + (cfg.cols * cfg.rows) + ' 张/页，单张 ' + L.lw.toFixed(1) + '×' + L.lh.toFixed(1) + 'mm')
+        : ('当前 ' + cfg.cols + ' 列 × ' + cfg.rows + ' 行 = ' + (cfg.cols * cfg.rows) + ' 张/页，纸张 ' + Math.round(cfg.pageW) + '×' + Math.round(cfg.pageH) + 'mm，单张 ' + L.lw.toFixed(1) + '×' + L.lh.toFixed(1) + 'mm');
+      if (L.lw < 49.5 || L.lh < 24.5) {
+        gh.textContent += '（小于标准 50×25mm，条码与字号会自动缩小）';
+      }
+    }
+
+    updateStats(R.shown.length, R.usedRooms, L.pageCount);
+    updateInfo(R.list, cfg);
+  }
+
+  /** 清空字号提示（非座号条视图） */
+  function clearScaleEff() {
+    var se = $('scaleEff');
+    if (se) se.textContent = '';
+  }
+
+  /** 桌贴：大号座号卡，每页若干张 */
+  function renderDesk() {
+    var cfg = readCfg();
+    var pagesEl = $('pages');
+    if (!S.students.length) {
+      pagesEl.innerHTML = '<div class="empty"><b>等待导入名单</b>在左侧导入或粘贴名单，点“解析名单”，右侧即刻生成桌贴预览。</div>';
+      updateStats(0, 0, 0);
+      return;
+    }
+
+    var R = computeRecords(cfg);
+    var items = [], i, c;
+    for (i = 0; i < R.shown.length; i++) for (c = 0; c < cfg.copies; c++) items.push(R.shown[i]);
+
+    var perPage = cfg.deskCols * cfg.deskRows;
+    var pageCount = Math.max(1, Math.ceil(items.length / perPage));
+    var DL = deskLayout(cfg);
+
+    var vars = [
+      '--pw:' + cfg.pageW + 'mm', '--ph:' + cfg.pageH + 'mm',
+      '--cjk:' + cfg.fontStack,
+      '--pm:' + cfg.margin + 'mm',
+      '--pg:' + DL.gap + 'mm',
+      '--cols:' + cfg.deskCols, '--rows:' + cfg.deskRows,
+      '--f-dn:' + DL.fNo.toFixed(2) + 'mm',
+      '--f-ds:' + DL.fName.toFixed(2) + 'mm',
+      '--f-di:' + DL.fInfo.toFixed(2) + 'mm',
+      '--f-dt:' + DL.fTop.toFixed(2) + 'mm',
+      '--f-dc:' + DL.fCap.toFixed(2) + 'mm',
+      '--f-db:' + DL.fBc.toFixed(2) + 'mm'
+    ].join(';');
+    var headLine = DL.headLine;
+
+    var html = '';
+    for (var p = 0; p < pageCount; p++) {
+      html += '<div class="page" style="' + vars + '">';
+      for (var k = 0; k < perPage; k++) {
+        var rec = items[p * perPage + k];
+        if (rec) {
+          var text = bcContent(rec, cfg);
+          html += '<div class="deskcell' + (cfg.deskCutline ? '' : ' noline') + '">';
+          if (headLine) html += '<div class="desk-top">' + esc(headLine) + '</div>';
+          html += '<div class="desk-cap">座号</div>';
+          html += '<div class="desk-no">' + rec.seat + '</div>';
+          html += '<div class="desk-name">' + esc(rec.name) + '</div>';
+          html += '<div class="desk-info">第 ' + pad2(rec.room) + ' 考场</div>';
+          html += '<div class="desk-info">' + esc(rec.no || '') +
+            (cfg.showClass && rec.cls ? '　' + esc(rec.cls) : '') + '</div>';
+          if (cfg.deskBarcode) {
+            html += '<div class="desk-code">' + barcodeSVG(text) + '</div>';
+          }
+          html += '</div>';
+        } else {
+          html += '<div class="deskcell noline" style="border-color:transparent"></div>';
+        }
+      }
+      html += '</div>';
+    }
+    pagesEl.innerHTML = html;
+    clearScaleEff();
+    updateStats(R.shown.length, R.usedRooms, pageCount);
+    updateInfo(R.list, cfg);
+  }
+
+  /** 用 canvas 精确量一段文字在指定字号下的宽度（mm），随字体变化 */
+  var _mctx = null;
+  function textWidthMm(t, sizeMm) {
+    if (!_mctx) _mctx = document.createElement('canvas').getContext('2d');
+    _mctx.font = '400 ' + Math.max(1, sizeMm * 10) + 'px ' + PAGE_FONT;
+    return _mctx.measureText(String(t == null ? '' : t)).width / 10;
+  }
+
+  /** 在给定最大宽度内返回可用字号 */
+  function fitFontMm(t, maxW, capMm) {
+    var f = capMm;
+    if (f > maxW) f = maxW;
+    var w = textWidthMm(t, f);
+    if (w > maxW && w > 0) f = f * maxW / w * 0.99;
+    return Math.max(1, f);
+  }
+
+  /** 门贴几何（预览与 PDF 共用）：保证内容正好落在一页内 */
+  function doorMetrics(cfg, n) {
+    var m = cfg.margin, W = cfg.pageW - 2 * m;
+    var ks = cfg.fScale || 1;
+    var cols = cfg.seatCols, gap = 1.5;
+    var capOrg = W * 0.06, capExam = W * 0.04, capRoom = W * 0.19;
+    var baseOrg = fitFontMm(cfg.org || '校', W * 0.93, capOrg);
+    var baseExam = fitFontMm(cfg.exam || '考', W * 0.97, capExam);
+    var baseRoom = fitFontMm('第 01 考场', W * 0.93, capRoom);
+    var fOrg = Math.min(Math.max(baseOrg * ks, 1), baseOrg);
+    var fExam = Math.min(Math.max(baseExam * ks, 1), baseExam);
+    var fRoom = Math.min(Math.max(baseRoom * ks, 1), baseRoom);
+    var rows = Math.max(1, Math.ceil(n / cols));
+    var cellW = (W - (cols - 1) * gap) / cols;
+
+    // 与 .door 各块的实际 CSS 高度对应的估值（mm）
+    var headH = (cfg.org ? fOrg * 1.15 + 3 : 0) + (cfg.exam ? fExam * 1.2 + 1.8 : 0);
+    var roomH = fRoom * 1.1 + 9.5;
+    var subH = fExam * 1.3;
+    var noteH = fExam * 1.3 + 4.5;
+    var gridH = (cfg.pageH - 2 * m) - headH - roomH - subH - noteH - 2;
+    var cellCap = 44 * (cfg.pageH / 297);
+    var cellH = Math.min(cellCap, (gridH - (rows - 1) * gap) / rows);
+    if (cellH < 0) cellH = 0;
+    return {
+      m: m, W: W, cols: cols, gap: gap, rows: rows, cellW: cellW, cellH: cellH,
+      gridH: gridH, headH: headH, roomH: roomH, subH: subH,
+      fOrg: fOrg, fExam: fExam, fRoom: fRoom
+    };
+  }
+
+  /** 考场门贴：每考场一页大字号，可选附座位表 */
+  function renderDoor() {
+    var cfg = readCfg();
+    var pagesEl = $('pages');
+    if (!S.students.length) {
+      pagesEl.innerHTML = '<div class="empty"><b>等待导入名单</b>在左侧导入或粘贴名单，点“解析名单”，右侧即刻生成考场门贴。</div>';
+      updateStats(0, 0, 0);
+      return;
+    }
+
+    var R = computeRecords(cfg);
+    var G = groupByRoom(R.shown);
+    if (!G.order.length) {
+      pagesEl.innerHTML = '<div class="empty"><b>没有可显示的考场</b>请检查“只打印指定考场”的范围。</div>';
+      updateStats(0, 0, 0);
+      return;
+    }
+
+    var m = cfg.margin;
+    var W = cfg.pageW - m * 2;
+    var cols = cfg.seatCols;
+    var gap = 1.5;
+
+    var html = '';
+    for (var p = 0; p < G.order.length; p++) {
+      var roomNo = G.order[p];
+      var mine = G.groups[roomNo].slice().sort(function (a, b) { return a.seat - b.seat; });
+      var noList = mine.map(function (r) { return r.no; }).filter(Boolean).sort();
+      var roomTxt = '第 ' + pad2(roomNo) + ' 考场';
+      var M = doorMetrics(cfg, mine.length);
+      var headLine = '共 ' + mine.length + ' 人' + (noList.length ? '　考号 ' + esc(noList[0]) + ' — ' + esc(noList[noList.length - 1]) : '');
+
+      var rows = M.rows, cellW = M.cellW, cellH = M.cellH;
+      var baseSeatH = Math.min(cellH * 0.40, cellW * 0.42);
+      var baseNameH = Math.min(cellH * 0.22, cellW * 0.26);
+      var fSeat = Math.min(baseSeatH * (cfg.fScale || 1), cellH * 0.46, cellW * 0.50);
+      var fNameS = Math.min(baseNameH * (cfg.fScale || 1), cellH * 0.25, cellW * 0.34);
+
+      var vars = '--pw:' + cfg.pageW + 'mm;--ph:' + cfg.pageH + 'mm;--cjk:' + cfg.fontStack +
+        ';--pm:' + M.m + 'mm;--f-drm:' + M.fRoom.toFixed(2) +
+        'mm;--f-dop:' + M.fOrg.toFixed(2) + 'mm;--f-dex:' + M.fExam.toFixed(2) +
+        'mm;--f-dds:' + fSeat.toFixed(2) + 'mm;--f-ddn:' + fNameS.toFixed(2) + 'mm';
+
+      html += '<div class="page" style="' + vars + ';--cols:1;--rows:1">';
+      html += '<div class="door' + (cfg.doorCutline ? '' : '') + '">';
+      html += '<div class="door-head"><div class="door-org">' + esc(cfg.org || '') + '</div>' +
+        (cfg.exam ? '<div class="door-exam">' + esc(cfg.exam) + '</div>' : '') + '</div>';
+      html += '<div class="door-room">' + roomTxt + '</div>';
+      html += '<div class="door-sub">' + headLine + '</div>';
+
+      if (cfg.doorSeatmap) {
+        var seatMap = {}, q;
+        for (q = 0; q < mine.length; q++) seatMap[mine[q].seat] = mine[q];
+        html += '<div class="door-grid" style="grid-template-columns:repeat(' + cols +
+          ',1fr);grid-auto-rows:' + cellH.toFixed(2) + 'mm">';
+        for (var rr = 0; rr < rows; rr++) {
+          for (var cc = 0; cc < cols; cc++) {
+          var pos = seatPos(rr, cc, cols, rows, cfg.seatOrder);
+            var rec = seatMap[pos + 1];
+            if (rec) {
+              html += '<div class="door-cell"><div class="door-seat">' + rec.seat + '</div>' +
+                '<div class="door-name">' + esc(rec.name) + '</div>' +
+                (cfg.seatShowNo && rec.no ? '<div class="door-name">' + esc(rec.no) + '</div>' : '') +
+                (cfg.seatShowCls && rec.cls ? '<div class="door-name">' + esc(rec.cls) + '</div>' : '') +
+                '</div>';
+            } else {
+              html += '<div class="door-cell" style="border-style:dashed;border-color:#cfd5de;color:#c9cfd9">' +
+                '<div class="door-seat">' + (pos + 1) + '</div></div>';
+            }
+          }
+        }
+        html += '</div>';
+      }
+      html += '<div class="door-note">请核对考场号，对号入座 · 手机静音</div>';
+      html += '</div></div>';
+    }
+
+    pagesEl.innerHTML = html;
+    clearScaleEff();
+    updateStats(R.shown.length, G.order.length, G.order.length);
+    updateInfo(R.list, cfg);
+  }
+
+  /** 考场与考号说明文字 */
+  function updateInfo(list, cfg) {
+    var sizes = planRooms(S.students.length, cfg.perRoom, cfg.even);
+    var lastRoom = cfg.start + sizes.length - 1;
+    var minS = Math.min.apply(null, sizes), maxS = Math.max.apply(null, sizes);
+    $('roomStat').textContent = '共 ' + S.students.length + ' 人，分 ' + sizes.length +
+      ' 个考场（' + cfg.start + '—' + lastRoom + '），每场 ' +
+      (minS === maxS ? minS : minS + '~' + maxS) + ' 人。';
+
+    if (cfg.noMode === 'random') {
+      var numEnd = cfg.noStart + S.students.length - 1;
+      var padStart = cfg.noPrefix + String(cfg.noStart).padStart(cfg.noDigits, '0');
+      var padEnd = cfg.noPrefix + String(numEnd).padStart(cfg.noDigits, '0');
+      $('noStat').textContent = '随机生成 ' + S.students.length + ' 个考号：' + padStart +
+        ' — ' + padEnd + '（种子 ' + cfg.noSeed + '，改种子即重新洗牌）';
+    } else {
+      var seen = {}, dup = 0, q;
+      for (q = 0; q < list.length; q++) {
+        var key0 = list[q].no;
+        if (!key0) continue;
+        if (seen[key0]) dup++; seen[key0] = 1;
+      }
+      $('noStat').textContent = dup
+        ? '名单中有 ' + dup + ' 个重复考号，建议改为随机生成。'
+        : '沿用名单考号，共 ' + list.length + ' 个，无重复。';
+    }
+  }
+
+  /** 视图分派：座号条 / 桌贴 / 考场门贴 / 座位布局图 */
+  function render() {
+    if (!S.students.length) {
+      $('pages').innerHTML = '<div class="empty"><b>等待导入名单</b>在左侧导入或粘贴名单，点“解析名单”，右侧即刻生成。</div>';
+      updateStats(0, 0, 0);
+      return;
+    }
+    var c0 = readCfg();
+    applyPage(c0);
+    syncPaper(c0);
+    if (S.view === 'seat') renderSeats();
+    else if (S.view === 'desk') renderDesk();
+    else if (S.view === 'door') renderDoor();
+    else renderLabels();
+  }
+
+  /** 座位布局图：每个考场一页，标注讲台，可蛇形排布 */
+  function renderSeats() {
+    var cfg = readCfg();
+    if (!S.students.length) {
+      $('pages').innerHTML = '<div class="empty"><b>等待导入名单</b>在左侧导入或粘贴名单，点“解析名单”，右侧即刻生成座位布局图。</div>';
+      updateStats(0, 0, 0);
+      return;
+    }
+    var R = computeRecords(cfg);
+    var recs = R.shown;
+
+    var groups = {}, i;
+    for (i = 0; i < recs.length; i++) {
+      var rm = recs[i].room;
+      if (!groups[rm]) groups[rm] = [];
+      groups[rm].push(recs[i]);
+    }
+    var roomNos = Object.keys(groups).map(Number).sort(function (a, b) { return a - b; });
+
+    var cols = cfg.seatCols;
+    var order = cfg.seatOrder;
+    var showNo = cfg.seatShowNo;
+    var showCls = cfg.seatShowCls;
+    var m = cfg.margin, gap = 1.5;
+    var innerW = cfg.pageW - m * 2;
+    var ks = cfg.fScale || 1;
+
+    var html = '';
+    for (var p = 0; p < roomNos.length; p++) {
+      var roomNo = roomNos[p];
+      var mine = groups[roomNo].slice().sort(function (a, b) { return a.seat - b.seat; });
+      var rows = Math.max(1, Math.ceil(mine.length / cols));
+      var cellW = (innerW - (cols - 1) * gap) / cols;
+      // 标题与讲台条的高度随字号变化，迭代两次求出可用的格子高度
+      var headH = 24, cellH = 0, fTitle, fNm, fTiny, it;
+      for (it = 0; it < 3; it++) {
+        var innerH = cfg.pageH - m * 2 - headH;
+        cellH = Math.min((innerH - (rows - 1) * gap) / rows, 55);
+        if (cellH < 0) cellH = 0;
+        fTitle = Math.min(Math.min(11, cellH * 0.32, cellW * 0.33) * ks, cellH * 0.44, cellW * 0.50);
+        fNm = Math.min(Math.min(cellH * 0.2, cellW * 0.24) * ks, cellH * 0.26, cellW * 0.32);
+        fTiny = Math.min(Math.min(cellH * 0.12, cellW * 0.13) * ks, cellH * 0.16, cellW * 0.18);
+        headH = fTitle * 1.25 + fTiny * 1.25 + 9.5;
+      }
+      var fBig = fTitle;
+      var vars = '--pw:' + cfg.pageW + 'mm;--ph:' + cfg.pageH + 'mm;--cjk:' + cfg.fontStack +
+        ';--pm:' + m + 'mm;--f-big:' + fBig.toFixed(2) + 'mm;--f-nm:' + fNm.toFixed(2) +
+        'mm;--f-tiny:' + fTiny.toFixed(2) + 'mm;--f-title:' + fTitle.toFixed(2) + 'mm';
+
+      var seatMap = {}, q;
+      for (q = 0; q < mine.length; q++) seatMap[mine[q].seat] = mine[q];
+
+      html += '<div class="seatpage" style="' + vars + '">';
+      html += '<div class="sp-head"><div class="sp-title">第 ' + roomNo + ' 考场</div>' +
+        '<div class="sp-sub">' + esc([cfg.org, cfg.exam].filter(Boolean).join(' · ')) +
+        ' · 共 ' + mine.length + ' 人</div></div>';
+      html += '<div class="sp-stage">讲 台  /  黑 板</div>';
+      html += '<div class="seat-grid" style="grid-template-columns:repeat(' + cols +
+        ',1fr);grid-auto-rows:' + cellH.toFixed(2) + 'mm">';
+      for (var rr = 0; rr < rows; rr++) {
+        for (var cc = 0; cc < cols; cc++) {
+          var pos = seatPos(rr, cc, cols, rows, order);
+          var rec = seatMap[pos + 1];
+          if (rec) {
+            html += '<div class="seat-cell"><div class="seat-no">' + rec.seat + '</div>' +
+              '<div class="seat-name">' + esc(rec.name) + '</div>' +
+              (showNo && rec.no ? '<div class="seat-no2">' + esc(rec.no) + '</div>' : '') +
+              (showCls && rec.cls ? '<div class="seat-no2">' + esc(rec.cls) + '</div>' : '') +
+              '</div>';
+          } else {
+            html += '<div class="seat-cell seat-empty"><div class="seat-no">' + (pos + 1) + '</div></div>';
+          }
+        }
+      }
+      html += '</div></div>';
+    }
+
+    $('pages').innerHTML = html ||
+      '<div class="empty"><b>没有可显示的考场</b>请检查“只打印指定考场”的范围。</div>';
+    clearScaleEff();
+    updateStats(recs.length, roomNos.length, roomNos.length);
+    updateInfo(R.list, cfg);
+  }
+
+  function updateStats(people, rooms, pages) {
+    $('tagPeople').textContent = people + ' 人';
+    $('tagRooms').textContent = rooms + ' 个考场';
+    $('tagPages').textContent = '打印 ' + pages + ' 页';
+  }
+
+  /* ---------------- 9. 导出名单（按考场 / 按班级） ---------------- */
+  function csvCell(v) {
+    v = String(v == null ? '' : v);
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+
+  function todayStr() {
+    var d = new Date();
+    return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate());
+  }
+
+  function downloadBlob(blob, name) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+  }
+
+  function csvText(lines) {
+    return '\uFEFF' + lines.join('\r\n');
+  }
+
+  function csvLines(recs, cfg, clsFirst) {
+    var head = clsFirst ? ['班级', '考场', '座号', '考号', '姓名', '条码内容']
+      : ['考场', '座号', '考号', '姓名', '班级', '条码内容'];
+    var lines = [head.join(',')];
+    for (var i = 0; i < recs.length; i++) {
+      var r = recs[i];
+      lines.push((clsFirst
+        ? [csvCell(r.cls), pad2(r.room), r.seat, csvCell(r.no), csvCell(r.name), csvCell(bcContent(r, cfg))]
+        : [pad2(r.room), r.seat, csvCell(r.no), csvCell(r.name), csvCell(r.cls), csvCell(bcContent(r, cfg))]
+      ).join(','));
+    }
+    return lines;
+  }
+
+  function exportRoomCSV() {
+    if (!S.students.length) { alert('请先导入并解析名单。'); return; }
+    var cfg = readCfg();
+    var R = computeRecords(cfg);
+    downloadBlob(new Blob([csvText(csvLines(R.shown, cfg))], { type: 'text/csv;charset=utf-8' }),
+      '分考场名单_' + todayStr() + '.csv');
+  }
+
+  /** 按班级汇总成一张 csv（班级 → 考场 → 座号） */
+  function exportClassCSV() {
+    if (!S.students.length) { alert('请先导入并解析名单。'); return; }
+    var cfg = readCfg();
+    var R = computeRecords(cfg);
+    var recs = R.shown.slice();
+    recs.sort(function (a, b) {
+      var x = a.cls || '未填班级', y = b.cls || '未填班级';
+      if (x !== y) return x.localeCompare(y, 'zh-Hans-CN');
+      return a.room === b.room ? a.seat - b.seat : a.room - b.room;
+    });
+    downloadBlob(new Blob([csvText(csvLines(recs, cfg, true))], { type: 'text/csv;charset=utf-8' }),
+      '按班级汇总_' + todayStr() + '.csv');
+  }
+
+  /** 按班级导出：每班一个 csv，打成一个 zip */
+  function exportClassZip() {
+    if (!S.students.length) { alert('请先导入并解析名单。'); return; }
+    var cfg = readCfg();
+    var R = computeRecords(cfg);
+    var groups = {}, order = [], i;
+    for (i = 0; i < R.shown.length; i++) {
+      var k = R.shown[i].cls || '未填班级';
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(R.shown[i]);
+    }
+    if (!order.length) { alert('没有可导出的数据。'); return; }
+    order.sort(function (a, b) { return a.localeCompare(b, 'zh-Hans-CN'); });
+
+    var files = [], idx = 1;
+    for (i = 0; i < order.length; i++) {
+      var cls = order[i];
+      var recs = groups[cls].slice().sort(function (a, b) {
+        return a.room === b.room ? a.seat - b.seat : a.room - b.room;
+      });
+      files.push({
+        name: '班级名单_' + cls + '.csv',
+        data: csvText(csvLines(recs, cfg, false))
+      });
+    }
+    // 附一张汇总
+    var all = R.shown.slice().sort(function (a, b) {
+      var x = a.cls || '未填班级', y = b.cls || '未填班级';
+      if (x !== y) return x.localeCompare(y, 'zh-Hans-CN');
+      return a.room === b.room ? a.seat - b.seat : a.room - b.room;
+    });
+    files.push({ name: '00_汇总_按班级.csv', data: csvText(csvLines(all, cfg, true)) });
+
+    var blob = makeZip(files);
+    downloadBlob(blob, '按班级名单_' + todayStr() + '.zip');
+  }
+
+  /* ---------------- ZIP 打包（仅存储，不压缩） ---------------- */
+  var CRC_TABLE = null;
+  function crc32(bytes) {
+    if (!CRC_TABLE) {
+      CRC_TABLE = new Uint32Array(256);
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        CRC_TABLE[n] = c >>> 0;
+      }
+    }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function makeZip(files) {
+    var enc = new TextEncoder();
+    var parts = [], central = [], offset = 0;
+    var now = new Date();
+    var dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+    var dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+
+    for (var f = 0; f < files.length; f++) {
+      var nameB = enc.encode(files[f].name);
+      var data = typeof files[f].data === 'string' ? enc.encode(files[f].data) : files[f].data;
+      var crc = crc32(data);
+
+      var lh = new Uint8Array(30 + nameB.length);
+      lh[0] = 0x50; lh[1] = 0x4B; lh[2] = 0x03; lh[3] = 0x04;
+      lh[4] = 20; lh[5] = 0;
+      lh[6] = 0x00; lh[7] = 0x08;           // UTF-8 名称
+      lh[8] = 0; lh[9] = 0;                 // 存储
+      lh[10] = dosTime & 0xFF; lh[11] = dosTime >> 8;
+      lh[12] = dosDate & 0xFF; lh[13] = dosDate >> 8;
+      lh[14] = crc & 0xFF; lh[15] = (crc >> 8) & 0xFF; lh[16] = (crc >> 16) & 0xFF; lh[17] = (crc >>> 24) & 0xFF;
+      lh[18] = data.length & 0xFF; lh[19] = (data.length >> 8) & 0xFF; lh[20] = (data.length >> 16) & 0xFF; lh[21] = (data.length >>> 24) & 0xFF;
+      lh[22] = lh[18]; lh[23] = lh[19]; lh[24] = lh[20]; lh[25] = lh[21];
+      lh[26] = nameB.length & 0xFF; lh[27] = (nameB.length >> 8) & 0xFF;
+      lh[28] = 0; lh[29] = 0;
+      lh.set(nameB, 30);
+
+      parts.push(lh, data);
+
+      var ch = new Uint8Array(46 + nameB.length);
+      ch[0] = 0x50; ch[1] = 0x4B; ch[2] = 0x01; ch[3] = 0x02;
+      ch[4] = 20; ch[5] = 0;                // version made by
+      ch[6] = 20; ch[7] = 0;                // version needed
+      ch[8] = 0x00; ch[9] = 0x08;           // UTF-8 名称
+      ch[10] = 0; ch[11] = 0;               // 存储
+      ch[12] = dosTime & 0xFF; ch[13] = dosTime >> 8;
+      ch[14] = dosDate & 0xFF; ch[15] = dosDate >> 8;
+      ch[16] = crc & 0xFF; ch[17] = (crc >> 8) & 0xFF; ch[18] = (crc >> 16) & 0xFF; ch[19] = (crc >>> 24) & 0xFF;
+      ch[20] = data.length & 0xFF; ch[21] = (data.length >> 8) & 0xFF; ch[22] = (data.length >> 16) & 0xFF; ch[23] = (data.length >>> 24) & 0xFF;
+      ch[24] = ch[20]; ch[25] = ch[21]; ch[26] = ch[22]; ch[27] = ch[23];
+      ch[28] = nameB.length & 0xFF; ch[29] = (nameB.length >> 8) & 0xFF;
+      ch[42] = offset & 0xFF; ch[43] = (offset >> 8) & 0xFF; ch[44] = (offset >> 16) & 0xFF; ch[45] = (offset >>> 24) & 0xFF;
+      ch.set(nameB, 46);
+      central.push(ch);
+
+      offset += lh.length + data.length;
+    }
+
+    var cdStart = offset;
+    var cdSize = 0;
+    for (var ci = 0; ci < central.length; ci++) { parts.push(central[ci]); cdSize += central[ci].length; }
+
+    var eocd = new Uint8Array(22);
+    eocd[0] = 0x50; eocd[1] = 0x4B; eocd[2] = 0x05; eocd[3] = 0x06;
+    eocd[8] = files.length & 0xFF; eocd[9] = (files.length >> 8) & 0xFF;
+    eocd[10] = eocd[8]; eocd[11] = eocd[9];
+    eocd[12] = cdSize & 0xFF; eocd[13] = (cdSize >> 8) & 0xFF; eocd[14] = (cdSize >> 16) & 0xFF; eocd[15] = (cdSize >>> 24) & 0xFF;
+    eocd[16] = cdStart & 0xFF; eocd[17] = (cdStart >> 8) & 0xFF; eocd[18] = (cdStart >> 16) & 0xFF; eocd[19] = (cdStart >>> 24) & 0xFF;
+    parts.push(eocd);
+
+    var total = 0;
+    for (var pi = 0; pi < parts.length; pi++) total += parts[pi].length;
+    var out = new Uint8Array(total), o = 0;
+    for (pi = 0; pi < parts.length; pi++) { out.set(parts[pi], o); o += parts[pi].length; }
+    return new Blob([out], { type: 'application/zip' });
+  }
+
+  /* ---------------- 10. 导出 PDF（离线自绘，不依赖任何外部库） ---------------- */
+
+  /** 桌贴尺寸与字号（预览与 PDF 共用） */
+  function deskLayout(cfg) {
+    var gap = 2.2;
+    var innerW = cfg.pageW - cfg.margin * 2 - (cfg.deskCols - 1) * gap;
+    var innerH = cfg.pageH - cfg.margin * 2 - (cfg.deskRows - 1) * gap;
+    var cw = innerW / cfg.deskCols, ch = innerH / cfg.deskRows;
+    var headLine = [cfg.org, cfg.exam].filter(Boolean).join(' · ');
+    var ks = cfg.fScale || 1;
+    // 顶部小字 / 考号行：按真实字宽取字号，避免换字体后被截断
+    var topCap = Math.min(ch * 0.062, cw * 0.082);
+    var infoCap = Math.min(ch * 0.075, cw * 0.09);
+    var infoSample = '20260101' + (cfg.showClass ? '　高二(1)班' : '');
+    var fTopBase = headLine ? fitFontMm(headLine, cw * 0.90, topCap) : topCap;
+    var fInfoBase = fitFontMm(infoSample, cw * 0.92, infoCap);
+    var f = {
+      fNo: Math.min(Math.min(ch * 0.34, cw * 0.46) * ks, ch * 0.34, cw * 0.46),
+      fName: Math.min(Math.min(ch * 0.13, cw * 0.17) * ks, ch * 0.13, cw * 0.17),
+      fInfo: Math.min(fInfoBase * ks, infoCap, cw * 0.09),
+      fTop: Math.min(fTopBase * ks, topCap, cw * 0.082),
+      fCap: Math.min(Math.min(ch * 0.055, cw * 0.072) * ks, ch * 0.055, cw * 0.072),
+      fBc: Math.min(Math.min(ch * 0.16, cw * 0.30) * ks, ch * 0.16, cw * 0.30)
+    };
+    // 纵向自动收敛：内容总高超过格子时等比缩小
+    var total = f.fTop * 1.25 + f.fCap * 1.15 + f.fNo * 1.15 + f.fName * 1.3 +
+      f.fInfo * 2.6 + (cfg.deskBarcode ? f.fBc : 0) + 6;
+    if (total > ch && total > 0) {
+      var r = ch / total;
+      f.fNo *= r; f.fName *= r; f.fInfo *= r; f.fTop *= r; f.fCap *= r; f.fBc *= r;
+    }
+    f.gap = gap; f.cw = cw; f.ch = ch; f.headLine = headLine;
+    return f;
+  }
+
+  function deflateBytes(bytes) {
+    var cs = new CompressionStream('deflate');
+    return new Response(new Blob([bytes]).stream().pipeThrough(cs)).arrayBuffer()
+      .then(function (buf) { return new Uint8Array(buf); });
+  }
+
+  function makePainter(canvas, scale) {
+    var ctx = canvas.getContext('2d');
+    var api = {
+      ctx: ctx, s: scale,
+      clear: function () {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.textBaseline = 'middle';
+      },
+      font: function (sizeMm, weight, family) {
+        ctx.font = (weight || 400) + ' ' + Math.max(1, Math.round(sizeMm * scale * 10) / 10) +
+          'px ' + (family || PAGE_FONT);
+      },
+      width: function (t) { return ctx.measureText(String(t == null ? '' : t)).width / scale; },
+      text: function (t, xMm, yMm, opt) {
+        opt = opt || {};
+        ctx.save();
+        ctx.fillStyle = opt.color || '#000';
+        ctx.textAlign = opt.align || 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(t == null ? '' : t), xMm * scale, yMm * scale);
+        ctx.restore();
+      },
+      box: function (x, y, w, h, opt) {
+        opt = opt || {};
+        ctx.save();
+        ctx.beginPath();
+        var rx = Math.max(0, opt.r || 0) * scale;
+        var X = x * scale, Y = y * scale, Wp = w * scale, Hp = h * scale;
+        if (rx > 0 && ctx.roundRect) ctx.roundRect(X, Y, Wp, Hp, rx);
+        else ctx.rect(X, Y, Wp, Hp);
+        if (opt.fill) { ctx.fillStyle = opt.fill; ctx.fill(); }
+        if (opt.stroke) {
+          ctx.lineWidth = Math.max(1, (opt.lw || 0.25) * scale);
+          ctx.strokeStyle = opt.stroke;
+          ctx.setLineDash(opt.dash ? [1.4 * scale, 1.1 * scale] : []);
+          ctx.stroke();
+        }
+        ctx.restore();
+      },
+      line: function (x1, y1, x2, y2, color, lw) {
+        ctx.save();
+        ctx.strokeStyle = color || '#222';
+        ctx.lineWidth = Math.max(1, (lw || 0.4) * scale);
+        ctx.beginPath();
+        ctx.moveTo(x1 * scale, y1 * scale);
+        ctx.lineTo(x2 * scale, y2 * scale);
+        ctx.stroke();
+        ctx.restore();
+      },
+      barcode: function (text, x, y, w, h) {
+        var runs = code128Runs(text), i, total = 0;
+        for (i = 0; i < runs.length; i++) total += runs[i].w;
+        var quiet = 10, unit = w / (total + quiet * 2);
+        var cx = x + quiet * unit;
+        ctx.save();
+        ctx.fillStyle = '#000';
+        for (i = 0; i < runs.length; i++) {
+          if (runs[i].bar) {
+            var bx = Math.round(cx * scale);
+            var bw = Math.max(1, Math.round((cx + runs[i].w * unit) * scale) - bx);
+            ctx.fillRect(bx, Math.round(y * scale), bw, Math.round(h * scale));
+          }
+          cx += runs[i].w * unit;
+        }
+        ctx.restore();
+      }
+    };
+    return api;
+  }
+
+  /** 一页座号条 */
+  function drawLabelPage(p, cfg, L, items) {
+    var gap = L.gap, lw = L.lw, lh = L.lh, m = cfg.margin;
+    var headLine = L.headLine;
+    for (var k = 0; k < L.perPage; k++) {
+      var c = k % cfg.cols, r = Math.floor(k / cfg.cols);
+      var x = m + c * (lw + gap), y = m + r * (lh + gap);
+      if (cfg.showCutline) p.box(x, y, lw, lh, { stroke: '#b9c0cb', lw: 0.22, dash: true, r: 2.2 });
+      var rec = items[k];
+      if (!rec) continue;
+
+      var f1 = L.f1, f2 = L.f2, f3 = L.f3, fBc = L.fBc, bcW = L.bcW;
+      var hTop = headLine ? f1 * 1.25 : 0;
+      var hMain = f2 * 1.3;
+      var hBot = f3 * 1.4;
+      var gv = L.gv;
+      var total = hTop + hMain + fBc + hBot + gv * (headLine ? 3 : 2);
+      var top = y + Math.max(L.padV, (lh - total) / 2);
+      var cx = x + lw / 2;
+      var CJK = cfg.fontStack;
+
+      if (headLine) {
+        p.font(f1, 400, CJK);
+        p.text(headLine, cx, top + hTop / 2, { color: '#454545' });
+        top += hTop + gv;
+      }
+
+      var segs = [{ t: roomLineOf(rec), w: 400 }];
+      var totalW = 0, si;
+      for (si = 0; si < segs.length; si++) { p.font(f2, segs[si].w, CJK); totalW += p.width(segs[si].t); }
+      var sx = cx - totalW / 2;
+      for (si = 0; si < segs.length; si++) {
+        p.font(f2, segs[si].w, CJK);
+        p.text(segs[si].t, sx, top + hMain / 2, { align: 'left', color: segs[si].color || '#000' });
+        sx += p.width(segs[si].t);
+      }
+      top += hMain + gv;
+
+      var text = bcContent(rec, cfg);
+      p.barcode(text, cx - bcW / 2, top, bcW, fBc);
+      top += fBc + gv;
+
+      // 条码下行：姓名 + 考号（同一行）
+      var bsegs = [
+        { t: rec.name, w: 400 },
+        { t: '　' + (rec.no || text), w: 400 }
+      ];
+      if (cfg.showClass && rec.cls) bsegs.push({ t: '　' + rec.cls, w: 400, color: '#777' });
+      var bw2 = 0, bi;
+      for (bi = 0; bi < bsegs.length; bi++) { p.font(f3, bsegs[bi].w, CJK); bw2 += p.width(bsegs[bi].t); }
+      var bx2 = cx - bw2 / 2;
+      for (bi = 0; bi < bsegs.length; bi++) {
+        p.font(f3, bsegs[bi].w, CJK);
+        p.text(bsegs[bi].t, bx2, top + hBot / 2, { align: 'left', color: bsegs[bi].color || '#000' });
+        bx2 += p.width(bsegs[bi].t);
+      }
+    }
+  }
+
+  /** 一页桌贴 */
+  function drawDeskPage(p, cfg, DL, items) {
+    var m = cfg.margin;
+    for (var k = 0; k < cfg.deskCols * cfg.deskRows; k++) {
+      var c = k % cfg.deskCols, r = Math.floor(k / cfg.deskCols);
+      var x = m + c * (DL.cw + DL.gap), y = m + r * (DL.ch + DL.gap);
+      if (cfg.deskCutline) p.box(x, y, DL.cw, DL.ch, { stroke: '#b9c0cb', lw: 0.22, dash: true, r: 2.4 });
+      var rec = items[k];
+      if (!rec) continue;
+
+      var cx = x + DL.cw / 2;
+      var hTop = DL.headLine ? DL.fTop * 1.2 + 1.6 : 0;
+      var hCap = DL.fCap * 1.1;
+      var hNo = DL.fNo * 1.02;
+      var hName = DL.fName * 1.15;
+      var hInfo = DL.fInfo * 1.3;
+      var hBc = cfg.deskBarcode ? DL.fBc + 1.6 : 0;
+      var total = hTop + hCap + hNo + hName + hInfo * 2 + hBc + 3;
+      var top = y + Math.max(1.8, (DL.ch - total) / 2);
+
+      if (DL.headLine) { p.font(DL.fTop, 400); p.text(DL.headLine, cx, top + DL.fTop * 0.62, { color: '#666' }); top += hTop; }
+      p.font(DL.fCap, 400); p.text('座 号', cx, top + DL.fCap * 0.55, { color: '#999' }); top += hCap;
+      p.font(DL.fNo, 800); p.text(String(rec.seat), cx, top + DL.fNo * 0.52); top += hNo;
+      p.font(DL.fName, 800); p.text(rec.name, cx, top + DL.fName * 0.6); top += hName;
+      p.font(DL.fInfo, 400);
+      p.text('第 ' + pad2(rec.room) + ' 考场', cx, top + DL.fInfo * 0.6, { color: '#333' });
+      top += hInfo;
+      p.text(String(rec.no || '') + (cfg.showClass && rec.cls ? '　' + rec.cls : ''),
+        cx, top + DL.fInfo * 0.6, { color: '#333' });
+      top += hInfo + 1.0;
+
+      if (cfg.deskBarcode) {
+        var text = bcContent(rec, cfg), bw = DL.cw * 0.74;
+        p.barcode(text, cx - bw / 2, top, bw, DL.fBc);
+      }
+    }
+  }
+
+  /** 一页考场门贴 */
+  function drawDoorPage(p, cfg, room, mine) {
+    var M = doorMetrics(cfg, mine.length);
+    var m = M.m, W = M.W, cx = A4W / 2, i;
+    var fOrg = M.fOrg, fExam = M.fExam, fRoom = M.fRoom;
+    var roomTxt = '第 ' + pad2(room) + ' 考场';
+
+    var y = m;
+    if (cfg.org) { p.font(fOrg, 800); p.text(cfg.org, cx, y + fOrg * 0.62); y += fOrg * 1.25; }
+    if (cfg.exam) { p.font(fExam, 400); p.text(cfg.exam, cx, y + fExam * 0.7, { color: '#444' }); y += fExam * 1.35; }
+    y += 3;
+    p.box(m, y, W, 0.9, { fill: '#222' });
+    y += 7;
+
+    p.font(fRoom, 800);
+    p.text(roomTxt, cx, y + fRoom * 0.6);
+    y += fRoom * 1.1 + 9.2;
+
+    var noList = [];
+    for (i = 0; i < mine.length; i++) if (mine[i].no) noList.push(mine[i].no);
+    noList.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
+    var sub = '共 ' + mine.length + ' 人' +
+      (noList.length ? '　考号 ' + noList[0] + ' — ' + noList[noList.length - 1] : '');
+    p.font(fExam, 400);
+    p.text(sub, cx, y + fExam * 0.6, { color: '#555' });
+    y += fExam * 1.6 + 3;
+
+    var noteH = fExam * 1.3 + 4.5;
+    var gridTop = y + 2;
+    var gridBottom = A4H - m - noteH;
+    if (cfg.doorSeatmap) {
+      var cols = M.cols, gap = M.gap, rows = M.rows, cellW = M.cellW, cellH = M.cellH;
+      // 按实际剩余高度再收一次，保证不压到页脚
+      var availH = gridBottom - gridTop;
+      cellH = Math.max(2, Math.min(cellH, (availH - (rows - 1) * gap) / rows));
+      var baseSeat = Math.min(cellH * 0.40, cellW * 0.42);
+      var baseName = Math.min(cellH * 0.22, cellW * 0.26);
+      var fSeat = Math.min(baseSeat * (cfg.fScale || 1), cellH * 0.46, cellW * 0.50);
+      var fNameS = Math.min(baseName * (cfg.fScale || 1), cellH * 0.25, cellW * 0.34);
+      var seatMap = {};
+      for (i = 0; i < mine.length; i++) seatMap[mine[i].seat] = mine[i];
+
+      for (var rr = 0; rr < rows; rr++) {
+        for (var cc = 0; cc < cols; cc++) {
+          var pos = seatPos(rr, cc, cols, rows, cfg.seatOrder);
+          var x = m + cc * (cellW + gap), yy = gridTop + rr * (cellH + gap), rec = seatMap[pos + 1];
+          p.box(x, yy, cellW, cellH, {
+            stroke: rec ? '#aeb6c2' : '#cfd5de', lw: 0.2, r: 1.4, dash: !rec
+          });
+          var cellCx = x + cellW / 2;
+          if (rec) {
+            p.font(fSeat, 800); p.text(String(rec.seat), cellCx, yy + cellH * 0.34);
+            p.font(fNameS, 400); p.text(rec.name, cellCx, yy + cellH * 0.63);
+            var extra = [];
+            if (cfg.seatShowNo && rec.no) extra.push(rec.no);
+            if (cfg.seatShowCls && rec.cls) extra.push(rec.cls);
+            if (extra.length) p.text(extra.join(' · '), cellCx, yy + cellH * 0.85, { color: '#666' });
+          } else {
+            p.font(fSeat, 400); p.text(String(pos + 1), cellCx, yy + cellH * 0.5, { color: '#c9cfd9' });
+          }
+        }
+      }
+    }
+    p.font(fExam, 400);
+    p.text('请核对考场号，对号入座 · 手机静音', cx, A4H - m - 4, { color: '#666' });
+  }
+
+  /** 一页座位布局图 */
+  function drawSeatPage(p, cfg, room, mine) {
+    var m = cfg.margin, W = A4W - 2 * m, i;
+    var cols = cfg.seatCols, gap = 1.5;
+    var rows = Math.max(1, Math.ceil(mine.length / cols));
+    var cellW = (W - (cols - 1) * gap) / cols;
+    var ks = cfg.fScale || 1;
+    var headH = 24, cellH = 0, fTitle = 0, fNm = 0, fTiny = 0, it;
+    for (it = 0; it < 3; it++) {
+      var innerH = A4H - 2 * m - headH;
+      cellH = Math.min((innerH - (rows - 1) * gap) / rows, 55);
+      if (cellH < 0) cellH = 0;
+      fTitle = Math.min(Math.min(11, cellH * 0.32, cellW * 0.33) * ks, cellH * 0.44, cellW * 0.50);
+      fNm = Math.min(Math.min(cellH * 0.2, cellW * 0.24) * ks, cellH * 0.26, cellW * 0.32);
+      fTiny = Math.min(Math.min(cellH * 0.12, cellW * 0.13) * ks, cellH * 0.16, cellW * 0.18);
+      headH = fTitle * 1.25 + fTiny * 1.25 + 9.5;
+    }
+
+    p.font(fTitle, 800);
+    p.text('第 ' + room + ' 考场', m, m + fTitle * 0.6, { align: 'left' });
+    var head = [cfg.org, cfg.exam].filter(Boolean).join(' · ');
+    p.font(fTiny, 400);
+    p.text((head ? head + ' · ' : '') + '共 ' + mine.length + ' 人',
+      A4W - m, m + fTitle * 0.6, { align: 'right', color: '#555' });
+    var ruleY = m + fTitle * 1.15 + 1.6;
+    p.line(m, ruleY, A4W - m, ruleY, '#222', 0.9);
+
+    var stageH = fTiny * 1.2 + 2.4;
+    var stageY = ruleY + 2;
+    p.box(m, stageY, W, stageH, { stroke: '#999', lw: 0.2, dash: true, r: 1.2 });
+    p.font(fTiny, 400);
+    p.text('讲 台 / 黑 板', A4W / 2, stageY + stageH / 2, { color: '#333' });
+
+    var gridTop = Math.max(m + headH, stageY + stageH + 2);
+    var seatMap = {};
+    for (i = 0; i < mine.length; i++) seatMap[mine[i].seat] = mine[i];
+
+    for (var rr = 0; rr < rows; rr++) {
+      for (var cc = 0; cc < cols; cc++) {
+        var pos = seatPos(rr, cc, cols, rows, cfg.seatOrder);
+        var x = m + cc * (cellW + gap), yy = gridTop + rr * (cellH + gap), rec = seatMap[pos + 1];
+        p.box(x, yy, cellW, cellH, {
+          stroke: rec ? '#aeb6c2' : '#cfd5de', lw: 0.2, r: 1.4, dash: !rec
+        });
+        var cellCx = x + cellW / 2;
+        if (rec) {
+          p.font(fTitle, 800); p.text(String(rec.seat), cellCx, yy + cellH * 0.3);
+          p.font(fNm, 700); p.text(rec.name, cellCx, yy + cellH * 0.58);
+          var extra = [];
+          if (cfg.seatShowNo && rec.no) extra.push(rec.no);
+          if (cfg.seatShowCls && rec.cls) extra.push(rec.cls);
+          if (extra.length) { p.font(fTiny, 400); p.text(extra.join(' · '), cellCx, yy + cellH * 0.8, { color: '#666' }); }
+        } else {
+          p.font(fTitle, 400); p.text(String(pos + 1), cellCx, yy + cellH * 0.5, { color: '#c9cfd9' });
+        }
+      }
+    }
+  }
+
+  function collectPdfPages(cfg, R) {
+    var out = [];
+    if (cfg.view === 'label') {
+      var L = labelLayout(cfg, R.shown);
+      for (var i = 0; i < L.pageCount; i++) {
+        (function (items) {
+          out.push(function (p) { drawLabelPage(p, cfg, L, items); });
+        })(L.pageList[i] || []);
+      }
+    } else if (cfg.view === 'desk') {
+      var DL = deskLayout(cfg);
+      var items = [], a, b;
+      for (a = 0; a < R.shown.length; a++) for (b = 0; b < cfg.copies; b++) items.push(R.shown[a]);
+      var per = cfg.deskCols * cfg.deskRows;
+      var count = Math.max(1, Math.ceil(items.length / per));
+      for (var j = 0; j < count; j++) {
+        (function (slice) {
+          out.push(function (p) { drawDeskPage(p, cfg, DL, slice); });
+        })(items.slice(j * per, j * per + per));
+      }
+    } else if (cfg.view === 'door' || cfg.view === 'seat') {
+      var G = groupByRoom(R.shown);
+      var drawer = cfg.view === 'door' ? drawDoorPage : drawSeatPage;
+      G.order.forEach(function (room) {
+        var mine = G.groups[room].slice().sort(function (x, y) { return x.seat - y.seat; });
+        out.push(function (p) { drawer(p, cfg, room, mine); });
+      });
+    }
+    return out;
+  }
+
+  function assemblePdf(imgs, iw, ih) {
+    var enc = new TextEncoder();
+    var parts = [], pos = 0;
+    function add(x) {
+      var b = typeof x === 'string' ? enc.encode(x) : x;
+      parts.push(b);
+      pos += b.length;
+    }
+    var pw = (A4W / 25.4 * 72).toFixed(2);
+    var ph = (A4H / 25.4 * 72).toFixed(2);
+
+    add('%PDF-1.4\n');
+    var N = 2 + imgs.length * 3;
+    var offs = new Array(N + 1);
+    var kids = [];
+    for (var i = 0; i < imgs.length; i++) kids.push((5 + i * 3) + ' 0 R');
+
+    offs[1] = pos; add('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+    offs[2] = pos; add('2 0 obj\n<< /Type /Pages /Count ' + imgs.length + ' /Kids [' + kids.join(' ') + '] >>\nendobj\n');
+
+    for (i = 0; i < imgs.length; i++) {
+      var imgId = 3 + i * 3, ctId = imgId + 1, pgId = imgId + 2;
+
+      offs[imgId] = pos;
+      add(imgId + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + iw + ' /Height ' + ih +
+        ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ' + imgs[i].length +
+        ' >>\nstream\n');
+      add(imgs[i]);
+      add('\nendstream\nendobj\n');
+
+      offs[ctId] = pos;
+      var cs = 'q ' + pw + ' 0 0 ' + ph + ' 0 0 cm /Im0 Do Q';
+      add(ctId + ' 0 obj\n<< /Length ' + cs.length + ' >>\nstream\n' + cs + '\nendstream\nendobj\n');
+
+      offs[pgId] = pos;
+      add(pgId + ' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pw + ' ' + ph +
+        '] /Resources << /XObject << /Im0 ' + imgId + ' 0 R >> >> /Contents ' + ctId + ' 0 R >>\nendobj\n');
+    }
+
+    var xref = pos;
+    var xt = 'xref\n0 ' + (N + 1) + '\n0000000000 65535 f \n';
+    for (var o = 1; o <= N; o++) xt += ('0000000000' + (offs[o] || 0)).slice(-10) + ' 00000 n \n';
+    add(xt);
+    add('trailer\n<< /Size ' + (N + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
+
+    var total = 0, pi;
+    for (pi = 0; pi < parts.length; pi++) total += parts[pi].length;
+    var out = new Uint8Array(total), oo = 0;
+    for (pi = 0; pi < parts.length; pi++) { out.set(parts[pi], oo); oo += parts[pi].length; }
+    return new Blob([out], { type: 'application/pdf' });
+  }
+
+  function viewName(v) {
+    return { label: '座号条', desk: '桌贴', door: '考场门贴', seat: '座位布局图' }[v] || '座号条';
+  }
+
+  function setBusy(on, txt) {
+    var el = $('busy');
+    if (!el) return;
+    el.style.display = on ? 'inline-flex' : 'none';
+    if (txt) el.textContent = txt;
+  }
+
+  async function exportPdf(dpi) {
+    if (!S.students.length) { alert('请先导入并解析名单。'); return; }
+    var cfg = readCfg();
+    applyPage(cfg);
+    syncPaper(cfg);
+    var R = computeRecords(cfg);
+    if (!R.shown.length) { alert('当前没有可导出的记录，请检查“只打印指定考场”。'); return; }
+    var pages = collectPdfPages(cfg, R);
+    if (!pages.length) { alert('没有可导出的页面。'); return; }
+    if (typeof CompressionStream === 'undefined') {
+      alert('当前浏览器不支持 PDF 导出压缩，请用 Edge / Chrome 打开，或直接点“打印”另存为 PDF。');
+      return;
+    }
+
+    var d = Number(dpi) || 200;
+    var scale = d / 25.4;
+    var canvas = document.createElement('canvas');
+    canvas.width = Math.round(A4W * scale);
+    canvas.height = Math.round(A4H * scale);
+    var P = makePainter(canvas, scale);
+    var imgs = [];
+
+    setBusy(true, '正在生成 PDF…');
+    try {
+      for (var i = 0; i < pages.length; i++) {
+        setBusy(true, '正在生成 PDF ' + (i + 1) + '/' + pages.length);
+        P.clear();
+        pages[i](P);
+        await new Promise(function (r) { setTimeout(r, 20); });
+        var data = P.ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        var n = canvas.width * canvas.height;
+        var rgb = new Uint8Array(n * 3);
+        for (var k = 0, j = 0; k < data.length; k += 4) {
+          rgb[j++] = data[k]; rgb[j++] = data[k + 1]; rgb[j++] = data[k + 2];
+        }
+        imgs.push(await deflateBytes(rgb));
+      }
+      downloadBlob(assemblePdf(imgs, canvas.width, canvas.height),
+        viewName(cfg.view) + '_' + d + 'dpi_' + todayStr() + '.pdf');
+      setBusy(true, '已导出 ' + imgs.length + ' 页 PDF');
+      setTimeout(function () { setBusy(false); }, 3000);
+    } catch (e) {
+      setBusy(false);
+      alert('导出 PDF 失败：' + (e && e.message ? e.message : e));
+    }
+  }
+
+  /* ---------------- 10. 列下拉 ---------------- */
+  function fillColumnSelects(guess, colCount) {
+    var noSel = $('colNo'), nameSel = $('colName'), clsSel = $('colClass');
+    var opts = '';
+    for (var i = 0; i < colCount; i++) {
+      var label = '第 ' + (i + 1) + ' 列';
+      if (S.headerRow && S.headerRow[i]) label += '（' + S.headerRow[i] + '）';
+      opts += '<option value="' + i + '">' + esc(label) + '</option>';
+    }
+    noSel.innerHTML = '<option value="">无（随机生成）</option>' + opts;
+    nameSel.innerHTML = opts;
+    clsSel.innerHTML = '<option value="">无</option>' + opts;
+    noSel.value = guess.no >= 0 ? String(guess.no) : '';
+    nameSel.value = String(guess.name >= 0 ? guess.name : 0);
+    clsSel.value = guess.cls >= 0 ? String(guess.cls) : '';
+  }
+
+  /** 解析按钮 */
+  function doParse() {
+    var text = $('rawText').value;
+    var info = $('parseInfo');
+    if (!text.trim()) {
+      info.className = 'hint err';
+      info.textContent = '请先粘贴名单或选择文件。';
+      return;
+    }
+    var res = parseRawText(text);
+    if (!res) {
+      info.className = 'hint err';
+      info.textContent = '未解析到有效数据，请检查格式。';
+      return;
+    }
+    var colCount = 0;
+    for (var i = 0; i < res.rows.length; i++) colCount = Math.max(colCount, res.rows[i].length);
+    fillColumnSelects(res.guess, colCount);
+    $('mapCard').style.display = 'block';
+
+    buildStudents();
+    S.parsed = true;
+
+    // 名单里没有考号 → 自动改为随机生成考号
+    var noEmpty = 0;
+    for (var n0 = 0; n0 < S.students.length; n0++) if (!S.students[n0].no) noEmpty++;
+    var autoRandom = false;
+    if (noEmpty === S.students.length && $('noMode').value !== 'random') {
+      $('noMode').value = 'random';
+      $('noGenWrap').style.display = 'block';
+      autoRandom = true;
+    }
+
+    var bad = 0;
+    for (var j = 0; j < S.students.length; j++) if (!S.students[j].name) bad++;
+
+    info.className = 'hint';
+    info.innerHTML = '已解析 <b>' + S.students.length + '</b> 名学生' +
+      (res.header ? '（已识别表头）' : '') +
+      '，分隔方式：<b>' + ({ tab: '制表符', ',': '逗号', ';': '分号', space: '空格' }[res.delim]) + '</b>' +
+      (bad ? '，其中 <b style="color:#d93025">' + bad + '</b> 人姓名为空，请核对字段对应' : '') +
+      (autoRandom ? '，未检测到考号列，已自动切换为<b>随机生成考号</b>' : '') + '。';
+
+    render();
+    saveLocal();
+  }
+
+  /* ---------------- 11. 本地保存 ---------------- */
+  function saveLocal() {
+    try {
+      localStorage.setItem('exam_seat_raw', $('rawText').value);
+    } catch (e) {}
+  }
+
+  function restoreLocal() {
+    try {
+      var v = localStorage.getItem('exam_seat_raw');
+      if (v) $('rawText').value = v;
+    } catch (e) {}
+  }
+
+  /* ---------------- 12. xlsx / csv 文件读取 ---------------- */
+  function u16(b, o) { return b[o] | (b[o + 1] << 8); }
+  function u32(b, o) { return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0; }
+
+  async function inflateRaw(bytes) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('当前浏览器不支持解压，请改用另存为 CSV 后导入。');
+    var ds = new DecompressionStream('deflate-raw');
+    var stream = new Blob([bytes]).stream().pipeThrough(ds);
+    var buf = await new Response(stream).arrayBuffer();
+    return new Uint8Array(buf);
+  }
+
+  /** 极简 ZIP 读取（只取文件名 → Uint8Array） */
+  async function unzip(bytes) {
+    var files = {};
+    // 定位 EOCD
+    var eocd = -1;
+    for (var i = bytes.length - 22; i >= 0 && i >= bytes.length - 65558; i--) {
+      if (bytes[i] === 0x50 && bytes[i + 1] === 0x4b && bytes[i + 2] === 0x05 && bytes[i + 3] === 0x06) {
+        eocd = i; break;
+      }
+    }
+    if (eocd < 0) throw new Error('不是有效的 xlsx 文件');
+
+    var count = u16(bytes, eocd + 10);
+    var cdOffset = u32(bytes, eocd + 16);
+    var p = cdOffset;
+
+    for (var n = 0; n < count; n++) {
+      if (bytes[p] !== 0x50 || bytes[p + 1] !== 0x4b || bytes[p + 2] !== 0x01 || bytes[p + 3] !== 0x02) break;
+      var method = u16(bytes, p + 10);
+      var compSize = u32(bytes, p + 20);
+      var nameLen = u16(bytes, p + 28);
+      var extraLen = u16(bytes, p + 30);
+      var commentLen = u16(bytes, p + 32);
+      var localOff = u32(bytes, p + 42);
+      var name = '';
+      for (var k = 0; k < nameLen; k++) name += String.fromCharCode(bytes[p + 46 + k]);
+
+      // 本地头
+      var lNameLen = u16(bytes, localOff + 26);
+      var lExtraLen = u16(bytes, localOff + 28);
+      var dataStart = localOff + 30 + lNameLen + lExtraLen;
+      var raw = bytes.subarray(dataStart, dataStart + compSize);
+
+      if (/^xl\/(worksheets\/sheet\d+\.xml|sharedStrings\.xml|workbook\.xml)$/.test(name)) {
+        files[name] = method === 0 ? raw : await inflateRaw(raw);
+      }
+      p += 46 + nameLen + extraLen + commentLen;
+    }
+    return files;
+  }
+
+  function colToIndex(ref) {
+    var letters = ref.replace(/[0-9]/g, '');
+    var n = 0;
+    for (var i = 0; i < letters.length; i++) n = n * 26 + (letters.charCodeAt(i) - 64);
+    return n - 1;
+  }
+
+  async function readXlsx(file) {
+    var bytes = new Uint8Array(await file.arrayBuffer());
+    var files = await unzip(bytes);
+    var dec = new TextDecoder('utf-8');
+
+    var shared = [];
+    if (files['xl/sharedStrings.xml']) {
+      var ssDoc = new DOMParser().parseFromString(dec.decode(files['xl/sharedStrings.xml']), 'application/xml');
+      var sis = ssDoc.getElementsByTagNameNS('*', 'si');
+      for (var i = 0; i < sis.length; i++) {
+        var ts = sis[i].getElementsByTagNameNS('*', 't');
+        var s = '';
+        for (var j = 0; j < ts.length; j++) s += ts[j].textContent;
+        shared.push(s);
+      }
+    }
+
+    var sheetName = 'xl/worksheets/sheet1.xml';
+    if (!files[sheetName]) {
+      for (var key in files) if (/worksheets\/sheet\d+\.xml$/.test(key)) { sheetName = key; break; }
+    }
+    if (!files[sheetName]) throw new Error('未找到工作表');
+
+    var doc = new DOMParser().parseFromString(dec.decode(files[sheetName]), 'application/xml');
+    var rowsEls = doc.getElementsByTagNameNS('*', 'row');
+    var out = [];
+    for (var r = 0; r < rowsEls.length; r++) {
+      var cells = rowsEls[r].getElementsByTagNameNS('*', 'c');
+      var arr = [];
+      for (var c = 0; c < cells.length; c++) {
+        var cell = cells[c];
+        var ref = cell.getAttribute('r') || '';
+        var idx = ref ? colToIndex(ref) : arr.length;
+        var t = cell.getAttribute('t');
+        var val = '';
+        if (t === 'inlineStr') {
+          var is = cell.getElementsByTagNameNS('*', 't');
+          for (var q = 0; q < is.length; q++) val += is[q].textContent;
+        } else {
+          var vEl = cell.getElementsByTagNameNS('*', 'v');
+          if (vEl.length) {
+            val = vEl[0].textContent;
+            if (t === 's') val = shared[Number(val)] || '';
+          }
+        }
+        while (arr.length < idx) arr.push('');
+        arr[idx] = String(val).trim();
+      }
+      out.push(arr);
+    }
+    return out;
+  }
+
+  function rowsToText(rows) {
+    return rows.map(function (r) {
+      return r.map(function (v) { return v == null ? '' : v; }).join('\t');
+    }).join('\n');
+  }
+
+  async function handleFile(file) {
+    if (!file) return;
+    var info = $('parseInfo');
+    var name = file.name.toLowerCase();
+    try {
+      if (name.endsWith('.xlsx')) {
+        info.className = 'hint';
+        info.textContent = '正在读取 Excel…';
+        var rows = await readXlsx(file);
+        $('rawText').value = rowsToText(rows);
+      } else {
+        var text = await file.text();
+        $('rawText').value = text.replace(/^\uFEFF/, '');
+      }
+      $('delim').value = name.endsWith('.csv') ? ',' : 'tab';
+      $('hasHeader').value = 'auto';
+      doParse();
+    } catch (e) {
+      info.className = 'hint err';
+      info.textContent = '读取失败：' + e.message + '（可将 Excel 另存为 .csv 后导入）';
+    }
+  }
+
+  /* ---------------- 13. 事件绑定 ---------------- */
+  var autoTimer = null;
+  function refresh() {
+    if (!$('autoRefresh').checked) return;
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(render, 180);
+  }
+
+  function setView(v) {
+    S.view = v;
+    var map = { label: 'viewLabels', desk: 'viewDesk', door: 'viewDoor', seat: 'viewSeat' };
+    for (var k in map) { var el = $(map[k]); if (el) el.className = (k === v ? 'active' : ''); }
+    updateVisibility();
+    render();
+  }
+
+  /** 按当前样式显示对应的设置块 */
+  function updateVisibility() {
+    var v = S.view || 'label';
+    $('boxLabel').style.display = v === 'label' ? 'block' : 'none';
+    $('boxDesk').style.display = v === 'desk' ? 'block' : 'none';
+    $('boxDoor').style.display = v === 'door' ? 'block' : 'none';
+    $('boxBarcode').style.display = (v === 'label' || v === 'desk') ? 'block' : 'none';
+    $('cardSeat').style.display = (v === 'seat' || v === 'door') ? 'block' : 'none';
+  }
+
+  function bind() {
+    Array.prototype.forEach.call(document.querySelectorAll('#viewTabs button'), function (btn) {
+      btn.addEventListener('click', function () { setView(btn.getAttribute('data-view')); });
+    });
+    $('btnParse').addEventListener('click', doParse);
+    $('fileInput').addEventListener('change', function (e) {
+      handleFile(e.target.files && e.target.files[0]);
+      e.target.value = '';
+    });
+    $('btnPrint').addEventListener('click', function () {
+      if (!S.students.length) { alert('请先导入并解析名单。'); return; }
+      if (!$('autoRefresh').checked) render();
+      setTimeout(function () { window.print(); }, 120);
+    });
+
+    // 导出名单
+    $('btnExportRoom').addEventListener('click', function () { $('ddExport').open = false; exportRoomCSV(); });
+    $('btnExportClass').addEventListener('click', function () { $('ddExport').open = false; exportClassZip(); });
+    $('btnExportClassAll').addEventListener('click', function () { $('ddExport').open = false; exportClassCSV(); });
+
+    // 导出 PDF
+    Array.prototype.forEach.call(document.querySelectorAll('#ddPdf .dd-menu button'), function (btn) {
+      btn.addEventListener('click', function () {
+        $('ddPdf').open = false;
+        exportPdf(Number(btn.getAttribute('data-dpi')) || 200);
+      });
+    });
+
+    $('btnDemo').addEventListener('click', function () {
+      var demo = [];
+      var classes = ['高二(1)班', '高二(2)班', '高二(3)班', '高二(4)班'];
+      var surnames = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜'.split('');
+      var given = '伟芳娜敏静丽强磊军洋勇艳杰娟涛明超秀霞平刚桂英华玉兰'.split('');
+      for (var i = 1; i <= 96; i++) {
+        var name = surnames[i % surnames.length] + given[(i * 3) % given.length] + (i % 3 === 0 ? '' : given[(i * 7) % given.length]);
+        demo.push(['2026' + pad2(1) + pad2(String(i).length < 3 ? i : i), name, classes[i % classes.length]]);
+      }
+      var lines = ['考号\t姓名\t班级'];
+      for (var j = 0; j < demo.length; j++) lines.push(demo[j].join('\t'));
+      $('rawText').value = lines.join('\n');
+      $('delim').value = 'tab';
+      $('hasHeader').value = 'auto';
+      doParse();
+    });
+
+    // 列映射 / 参数变化后重建
+    ['colNo', 'colName', 'colClass'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        if (!S.parsed) return;
+        buildStudents();
+        render();
+      });
+    });
+
+    ['startRoom', 'perRoom', 'evenRooms', 'assignMode', 'seed', 'cols', 'rows', 'margin', 'copies',
+      'paper', 'paperW', 'paperH', 'fontFamily', 'fontScale', 'autoGrid',
+      'noMode', 'noPrefix', 'noDigits', 'noStart', 'noSeed',
+      'seatCols', 'seatOrder', 'seatShowNo', 'seatShowCls', 'newPagePerRoom',
+      'deskCols', 'deskRows', 'deskBarcode', 'deskCutline', 'doorSeatmap', 'doorCutline',
+      'bcSource', 'bcTpl', 'roomFilter', 'orgName', 'examName',
+      'showClass', 'showCutline', 'delim', 'hasHeader'].forEach(function (id) {
+        var node = $(id);
+        if (!node) return;
+        var sync = function () {
+          if (id === 'assignMode') $('seedWrap').style.display = node.value === 'random' ? 'block' : 'none';
+          if (id === 'noMode') $('noGenWrap').style.display = node.value === 'random' ? 'block' : 'none';
+          if (id === 'bcSource') $('bcTplWrap').style.display = node.value === 'custom' ? 'block' : 'none';
+          if (id === 'paper') {
+            $('customPaperWrap').style.display = node.value === 'custom' ? 'grid' : 'none';
+            $('cols').disabled = $('rows').disabled = $('autoGrid').checked;
+          }
+          if (id === 'autoGrid') $('cols').disabled = $('rows').disabled = node.checked;
+        };
+        node.addEventListener('input', function () { sync(); refresh(); });
+        node.addEventListener('change', function () { sync(); refresh(); });
+      });
+
+    $('customPaperWrap').style.display = $('paper').value === 'custom' ? 'grid' : 'none';
+    $('cols').disabled = $('rows').disabled = $('autoGrid').checked;
+
+    $('autoRefresh').addEventListener('change', function () {
+      if (this.checked) render();
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        if (S.students.length && !$('autoRefresh').checked) render();
+      }
+    });
+  }
+
+  /* ---------------- 14. 启动 ---------------- */
+  bind();
+  applyPage(readCfg());
+  syncPaper(readCfg());
+  restoreLocal();
+  updateVisibility();
+  render();
+})();
+</script>
+</body>
+</html>
